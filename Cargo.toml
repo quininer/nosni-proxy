@@ -1,0 +1,17 @@
+[package]
+name = "nosni-proxy"
+version = "0.1.0"
+authors = ["quininer <quininer@live.com>"]
+edition = "2018"
+
+[dependencies]
+failure = "*"
+nom = "4"
+tls-parser = { version = "*", features = ["serialize"] }
+
+rustls = "*"
+byteorder = "*"
+mio = "*"
+tokio = "*"
+tokio-io = "*"
+# trust-dns-resolver = { version = "*", features = ["dns-over-rustls"] }
