@@ -1,0 +1,15 @@
+[package]
+name = "nosni-proxy"
+version = "0.1.0"
+authors = ["quininer <quininer@live.com>"]
+edition = "2018"
+
+[dependencies]
+failure = "*"
+rustls = "*"
+webpki-roots = "*"
+hyper-rustls = "*"
+hyper = "*"
+tokio = "*"
+http = "*"
+# trust-dns-resolver = { version = "0.10.0-alpha.2", features = ["dns-over-rustls"] }
