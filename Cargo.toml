@@ -6,9 +6,8 @@ edition = "2018"
 
 [dependencies]
 failure = "*"
-rustls = "*"
-webpki-roots = "*"
-hyper-rustls = "*"
+native-tls = "*"
+hyper-tls = "*"
 hyper = "*"
 tokio = "*"
 http = "*"

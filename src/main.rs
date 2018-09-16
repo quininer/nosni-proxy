@@ -1,5 +1,6 @@
 #![feature(never_type)]
 
+mod proxy;
 mod httpfwd;
 
 use std::io;
@@ -8,9 +9,9 @@ use std::net::SocketAddr;
 use tokio::prelude::*;
 use hyper::client::HttpConnector;
 use hyper::server::Server;
-use rustls::ClientConfig;
-use hyper_rustls::HttpsConnector;
-use crate::httpfwd::Forward;
+use native_tls::TlsConnector;
+use hyper_tls::HttpsConnector;
+use crate::proxy::Proxy;
 
 
 fn main() -> io::Result<()> {
@@ -18,12 +19,12 @@ fn main() -> io::Result<()> {
 
     let mut http = HttpConnector::new(4);
     http.enforce_http(false);
-    let mut tls = ClientConfig::new();
-    tls.enable_sni = false;
-    tls.root_store
-        .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+    let mut tls_builder = TlsConnector::builder();
+    tls_builder.use_sni(false);
+    let tls = tls_builder.build()
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
     let https = HttpsConnector::from((http, tls));
-    let forward = Forward { tls: Arc::new(https) };
+    let forward = Proxy { tls: Arc::new(https) };
 
     let done = Server::bind(&addr)
         .serve(move || future::ok::<_, !>(forward.clone()))
