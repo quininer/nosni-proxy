@@ -1,0 +1,12 @@
+[package]
+name = "nosni-scan"
+version = "0.1.0"
+authors = ["quininer <quininer@live.com>"]
+edition = "2018"
+
+[dependencies]
+rustls = "0.13"
+futures = "0.1"
+hyper = "0.12"
+hyper-rustls = "0.14"
+webpki-roots = "0.15"
