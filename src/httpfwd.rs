@@ -1,16 +1,18 @@
 use http::uri::{ Scheme, PathAndQuery };
 use http::header::HeaderName;
-use tokio::prelude::*;
 use hyper::{ Request, Uri };
 use hyper::service::Service;
 use hyper::client::Client;
+use hyper_tls::HttpsConnector;
 use crate::proxy::Proxy;
 
 
 pub fn call(proxy: &mut Proxy, mut req: Request<<Proxy as Service>::ReqBody>)
     -> <Proxy as Service>::Future
 {
-    let tls = proxy.tls.as_ref().clone();
+    let http = proxy.http.clone();
+    let tls = proxy.tls.clone();
+    let https = HttpsConnector::from((http, tls));
 
     let builder = Client::builder();
 
@@ -44,12 +46,5 @@ pub fn call(proxy: &mut Proxy, mut req: Request<<Proxy as Service>::ReqBody>)
 
     // FIXME
 
-    eprintln!("{:#?}", req);
-
-    Box::new(builder.build(tls).request(req)
-        .map(|resp| {
-            eprintln!("{:#?}", resp);
-            resp
-        })
-    )
+    Box::new(builder.build(https).request(req))
 }

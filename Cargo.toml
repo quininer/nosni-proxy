@@ -4,11 +4,16 @@ version = "0.1.0"
 authors = ["quininer <quininer@live.com>"]
 edition = "2018"
 
+[workspace]
+members = [ "mitmca" ]
+
 [dependencies]
 failure = "*"
+bytes = "*"
 native-tls = "*"
+tokio-tls = "*"
 hyper-tls = "*"
 hyper = "*"
 tokio = "*"
 http = "*"
-# trust-dns-resolver = { version = "0.10.0-alpha.2", features = ["dns-over-rustls"] }
+trust-dns-resolver = "0.10.0-alpha.2"
