@@ -4,6 +4,7 @@ mod proxy;
 mod httpfwd;
 mod httptunnel;
 
+use std::env;
 use std::net::SocketAddr;
 use failure::Fallible;
 use tokio::prelude::*;
@@ -15,7 +16,13 @@ use crate::proxy::Proxy;
 
 
 fn main() -> Fallible<()> {
-    let addr = SocketAddr::from(([127, 0, 0, 1], 1087));
+    let mut iter = env::args().skip(1);
+
+    let addr = if let Some(addr) = iter.next() {
+        addr.parse()?
+    } else {
+        SocketAddr::from(([127, 0, 0, 1], 1087))
+    };
 
     // TODO use trust-dns
     // https://github.com/hyperium/hyper/issues/1517
@@ -24,7 +31,7 @@ fn main() -> Fallible<()> {
     let mut tls_builder = TlsConnector::builder();
     tls_builder.use_sni(false);
     let tls = tls_builder.build()?;
-    let identity = Identity::from_pkcs12(std::fs::read("./certificate.p12")?.as_ref(), "")?;
+    let identity = read_pkcs12(iter.next())?;
     let serv = TlsAcceptor::new(identity)?;
     let (resolver, background) = AsyncResolver::from_system_conf()?;
 
@@ -33,12 +40,48 @@ fn main() -> Fallible<()> {
     let done = future::lazy(move || {
         hyper::rt::spawn(background);
 
-        Server::bind(&addr)
-            .serve(move || future::ok::<_, !>(forward.clone()))
-            .map_err(|err| eprintln!("{:?}", err))
+        let srv = Server::bind(&addr)
+            .serve(move || future::ok::<_, !>(forward.clone()));
+        println!("bind: {:?}", srv.local_addr());
+        srv.map_err(|err| eprintln!("{:?}", err))
     });
 
     hyper::rt::run(done);
 
     Ok(())
+}
+
+
+
+fn read_pkcs12(path: Option<String>) -> Fallible<Identity> {
+    use std::fs;
+    use std::process::Command;
+
+    fn askpass<F, T>(f: F)
+        -> Fallible<T>
+        where F: FnOnce(&str) -> Fallible<T>
+    {
+        const PROMPT: &str = "Password:";
+
+        if let Ok(bin) = env::var("ENE_ASKPASS") {
+            Command::new(bin)
+                .arg(PROMPT)
+                .output()
+                .map_err(Into::into)
+                .and_then(|output| {
+                    let pw = String::from_utf8(output.stdout)?;
+                    f(&pw)
+                })
+        } else {
+            ttyaskpass::askpass(PROMPT, f)
+        }
+    }
+
+    let path = path.or_else(|| env::var("NOSNI_P12_PATH").ok())
+        .ok_or_else(|| failure::err_msg("Need PKCS12"))?;
+
+    askpass(|pass| {
+        Identity::from_pkcs12(fs::read(path)?.as_ref(), pass)
+            .map_err(Into::into)
+    })
 }

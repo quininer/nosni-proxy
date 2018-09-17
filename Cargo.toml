@@ -4,16 +4,17 @@ version = "0.1.0"
 authors = ["quininer <quininer@live.com>"]
 edition = "2018"
 
-[workspace]
-members = [ "mitmca" ]
-
 [dependencies]
-failure = "*"
-bytes = "*"
-native-tls = "*"
-tokio-tls = "*"
-hyper-tls = "*"
-hyper = "*"
-tokio = "*"
-http = "*"
+failure = "0.1"
+bytes = "0.4"
+native-tls = "0.2"
+tokio-tls = "0.2"
+hyper-tls = "0.3"
+hyper = "0.12"
+tokio = "0.1"
+http = "0.1"
 trust-dns-resolver = "0.10.0-alpha.2"
+ttyaskpass = { git = "https://github.com/quininer/ttyaskpass", branch = "mortal" }
+
+[patch.crates-io]
+terminfo = { git = "https://github.com/meh/rust-terminfo", rev = "abb548b47dab42c4354c6088cf5695c6d4454ed9" }
