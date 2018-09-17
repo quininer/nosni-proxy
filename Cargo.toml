@@ -3,6 +3,8 @@ name = "nosni-proxy"
 version = "0.1.0"
 authors = ["quininer <quininer@live.com>"]
 edition = "2018"
+description = "No SNI"
+license = "CC0-1.0"
 
 [dependencies]
 failure = "0.1"
