@@ -59,9 +59,10 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
                     let (local_read, local_write) = local.split();
 
                     aio::copy(remote_read, local_write)
-                        .join(aio::copy(local_read, remote_write))
                         .map(drop)
-                        .map_err(Into::into)
+                        .select2(aio::copy(local_read, remote_write).map(drop))
+                        .map(drop)
+                        .map_err(|res| res.split().0.into())
                 })
                 .map_err(|err| eprintln!("{:?}", err));
 
