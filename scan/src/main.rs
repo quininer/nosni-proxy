@@ -38,7 +38,7 @@ fn main() -> io::Result<()> {
                 .map(|(resp, uri)| if resp.status().is_success() {
                     println!("{}", uri);
                 })
-                .map_err(drop);
+                .map_err(|err| eprintln!("{:?}", err));
 
             rt::spawn(done);
         }
