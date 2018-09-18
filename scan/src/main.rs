@@ -1,7 +1,7 @@
 use std::{ env, fs };
 use std::io::{ self, BufRead };
 use futures::future::IntoFuture;
-use hyper::{ client, Client, Body };
+use hyper::{ client, Client, Body, Request };
 use hyper::rt::{ self, Future };
 use hyper_rustls::HttpsConnector;
 
@@ -26,19 +26,27 @@ fn main() -> io::Result<()> {
             let client = Client::builder()
                 .keep_alive(false)
                 .build::<_, Body>(https.clone());
+            let line2 = line.as_ref().ok().cloned();
 
             let done = line.into_future()
                 .and_then(|line| line.parse::<hyper::Uri>()
                     .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
                 )
-                .and_then(move |uri| client.get(uri.clone())
-                    .map(move |resp| (resp, uri))
-                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
-                )
+                .and_then(move |uri| {
+                    let req = Request::get(&uri)
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36")
+                        .body(Body::empty())
+                        .unwrap();
+                    client.request(req)
+                        .map(move |resp| (resp, uri.clone()))
+                        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+                })
                 .map(|(resp, uri)| if resp.status().is_success() {
                     println!("{}", uri);
+                } else {
+                    eprintln!("{}: {:?}", uri, resp);
                 })
-                .map_err(|err| eprintln!("{:?}", err));
+                .map_err(move |err| eprintln!("{:?}: {:?}", line2, err));
 
             rt::spawn(done);
         }
