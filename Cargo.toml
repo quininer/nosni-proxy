@@ -6,6 +6,9 @@ edition = "2018"
 description = "No SNI"
 license = "CC0-1.0"
 
+[workspace]
+members = [ "mitmca" ]
+
 [dependencies]
 failure = "0.1"
 bytes = "0.4"
@@ -20,6 +23,7 @@ http = "0.1"
 percent-encoding = "*"
 trust-dns-resolver = "0.10.0-alpha.3"
 ttyaskpass = { git = "https://github.com/quininer/ttyaskpass", branch = "mortal" }
+mitmca = { path = "mitmca" }
 
 rustls = "*"
 tokio-rustls = "*"

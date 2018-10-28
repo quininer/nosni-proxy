@@ -5,10 +5,9 @@ use failure::{ Fallible, err_msg };
 use tokio::prelude::*;
 use tokio::io as aio;
 use tokio::net::TcpStream;
-use tokio_tls::{ TlsAcceptor };
-use openssl::ssl::{ SslMethod, SslConnector };
-use tokio_openssl::ConnectConfigurationExt;
-use hyper::{ Request, Response, Body };
+use openssl::ssl::{ SslMethod, SslConnector, SslAcceptor };
+use tokio_openssl::{ ConnectConfigurationExt, SslAcceptorExt };
+use hyper::{ StatusCode, Request, Response, Body };
 use hyper::service::Service;
 use percent_encoding::percent_decode;
 use crate::proxy::Proxy;
@@ -24,14 +23,14 @@ macro_rules! and {
 pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
     -> Fallible<<Proxy as Service>::Future>
 {
-    let Proxy { serv, resolver, .. } = proxy;
-    let serv = TlsAcceptor::from(serv.clone());
+    let Proxy { alpn, ca, resolver } = proxy;
+    let ca = ca.clone();
     let resolver = resolver.clone();
     let port = req.uri().port().unwrap_or(443);
     let maybe_alpn = req.headers()
         .get("ALPN")
         .and_then(|val| val.to_str().ok())
-        .or_else(|| proxy.alpn.as_ref().map(String::as_str));
+        .or_else(|| alpn.as_ref().map(String::as_str));
 
     let mut tls_builder = SslConnector::builder(SslMethod::tls())?;
     if let Some(val) = maybe_alpn {
@@ -55,29 +54,48 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
         .map(ToOwned::to_owned)
         .ok_or_else(|| err_msg("missing host"))
         .into_future()
-        .and_then(move |name| {
-            let fut = resolver.lookup_ip(name.as_str())
-                .map_err(Into::into)
-                .and_then(|lookup| lookup.iter()
-                    .next()
-                    .ok_or_else(|| err_msg("ip not found")));
-            and!(fut, name)
-        })
-        .map(move |(ip, name)| {
+        .map(move |name| {
             let fut = req.into_body()
                 .on_upgrade()
                 .map_err(failure::Error::from)
-                .and_then(move |upgraded| serv.accept(upgraded).map_err(Into::into))
-                .and_then(move |local| {
-                    let addr = SocketAddr::from((ip, port));
-
-                    let fut = TcpStream::connect(&addr)
+                .and_then(move |upgraded| {
+                    let fut = resolver.lookup_ip(name.as_str())
                         .map_err(Into::into)
-                        .and_then(move |remote| connector.connect_async(&name, remote)
-                            .map_err(Into::into));
-                    and!(fut, local)
+                        .and_then(|lookup| lookup.iter()
+                            .next()
+                            .ok_or_else(|| err_msg("ip not found")))
+                        .and_then(move |ip| {
+                            let addr = SocketAddr::from((ip, port));
+                            TcpStream::connect(&addr)
+                                .map_err(Into::into)
+                                .and_then(move |remote| {
+                                    let fut = connector.connect_async(&name, remote)
+                                        .map_err(Into::into);
+                                    and!(fut, name)
+                                })
+                        });
+                    and!(fut, upgraded)
                 })
-                .and_then(|(remote, local)| {
+                .and_then(move |((remote, name), upgraded)| {
+                    let mut builder = ca.lock()
+                        .map_err(|_| err_msg("deadlock"))?
+                        .get(&name)?;
+                    if let Some(protocol) = remote.get_ref().ssl()
+                        .selected_alpn_protocol()
+                    {
+                        let mut buf = Vec::with_capacity(protocol.len() + 1);
+                        buf.push(protocol.len() as u8);
+                        buf.extend_from_slice(protocol);
+                        builder.set_alpn_protos(&buf)?;
+                    }
+                    let acceptor = builder.build();
+                    Ok((acceptor, remote, upgraded))
+                })
+                .and_then(|(acceptor, remote, upgraded)| {
+                    let fut = acceptor.accept_async(upgraded).map_err(Into::into);
+                    and!(fut, remote)
+                })
+                .and_then(|(local, remote)| {
                     let (remote_read, remote_write) = remote.split();
                     let (local_read, local_write) = local.split();
 
@@ -93,10 +111,9 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
             Response::new(Body::empty())
         })
         .or_else(|err| {
-            Ok(Response::builder()
-                .status(400)
-                .body(Body::from(format!("{:?}", err)))
-                .unwrap())
+            let mut resp = Response::new(Body::from(format!("{:?}", err)));
+            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            Ok(resp)
         });
 
     Ok(Box::new(done))

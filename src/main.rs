@@ -5,12 +5,14 @@ mod httptunnel;
 
 use std::env;
 use std::net::SocketAddr;
+use std::sync::{ Arc, Mutex };
 use failure::Fallible;
 use tokio::prelude::*;
 use hyper::client::HttpConnector;
 use hyper::server::Server;
 use native_tls::{ Identity, TlsConnector, TlsAcceptor };
 use trust_dns_resolver::AsyncResolver;
+use mitmca::{ Entry, CertStore };
 use crate::proxy::Proxy;
 
 
@@ -24,11 +26,10 @@ fn main() -> Fallible<()> {
     };
 
     let alpn = env::var("NOSNI_ALPN").ok();
-    let identity = read_pkcs12(iter.next())?;
-    let serv = TlsAcceptor::new(identity)?;
+    let ca = Arc::new(Mutex::new(read_pkcs12(iter.next())?));
     let (resolver, background) = AsyncResolver::from_system_conf()?;
 
-    let forward = Proxy { alpn, serv, resolver };
+    let forward = Proxy { alpn, ca, resolver };
 
     let done = future::lazy(move || {
         hyper::rt::spawn(background);
@@ -45,9 +46,10 @@ fn main() -> Fallible<()> {
 }
 
 
-fn read_pkcs12(path: Option<String>) -> Fallible<Identity> {
+fn read_pkcs12(path: Option<String>) -> Fallible<CertStore> {
     use std::fs;
     use std::process::Command;
+    use openssl::pkcs12::Pkcs12;
 
     fn askpass<F, T>(f: F)
         -> Fallible<T>
@@ -73,7 +75,8 @@ fn read_pkcs12(path: Option<String>) -> Fallible<Identity> {
         .ok_or_else(|| failure::err_msg("need pkcs12"))?;
 
     askpass(|pass| {
-        Identity::from_pkcs12(fs::read(path)?.as_ref(), pass)
-            .map_err(Into::into)
+        let pkcs12 = Pkcs12::from_der(fs::read(path)?.as_ref())?
+            .parse(pass)?;
+        Ok(CertStore::from(Entry(pkcs12)))
     })
 }

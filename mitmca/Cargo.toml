@@ -1,0 +1,10 @@
+[package]
+name = "mitmca"
+version = "0.1.0"
+authors = ["quininer <quininer@live.com>"]
+edition = "2018"
+
+[dependencies]
+publicsuffix = "*"
+openssl = "*"
+lru_time_cache = "*"
