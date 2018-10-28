@@ -27,15 +27,12 @@ fn main() -> Fallible<()> {
     // TODO use trust-dns
     // https://github.com/hyperium/hyper/issues/1517
     let mut http = HttpConnector::new(4);
-    http.enforce_http(false);
-    let mut tls_builder = TlsConnector::builder();
-    tls_builder.use_sni(false);
-    let tls = tls_builder.build()?;
+    let alpn = env::var("NOSNI_ALPN").ok();
     let identity = read_pkcs12(iter.next())?;
     let serv = TlsAcceptor::new(identity)?;
     let (resolver, background) = AsyncResolver::from_system_conf()?;
 
-    let forward = Proxy { http, tls, serv, resolver };
+    let forward = Proxy { alpn, http, serv, resolver };
 
     let done = future::lazy(move || {
         hyper::rt::spawn(background);
@@ -50,7 +47,6 @@ fn main() -> Fallible<()> {
 
     Ok(())
 }
-
 
 
 fn read_pkcs12(path: Option<String>) -> Fallible<Identity> {
@@ -78,7 +74,7 @@ fn read_pkcs12(path: Option<String>) -> Fallible<Identity> {
     }
 
     let path = path.or_else(|| env::var("NOSNI_P12_PATH").ok())
-        .ok_or_else(|| failure::err_msg("Need PKCS12"))?;
+        .ok_or_else(|| failure::err_msg("need pkcs12"))?;
 
     askpass(|pass| {
         Identity::from_pkcs12(fs::read(path)?.as_ref(), pass)

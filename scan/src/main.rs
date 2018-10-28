@@ -6,6 +6,8 @@ use hyper::rt::{ self, Future };
 use hyper_rustls::HttpsConnector;
 
 
+const UA: &static str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36";
+
 fn main() -> io::Result<()> {
     let mut iter = env::args().skip(1);
 
@@ -34,7 +36,7 @@ fn main() -> io::Result<()> {
                 )
                 .and_then(move |uri| {
                     let req = Request::get(&uri)
-                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36")
+                        .header("User-Agent", UA)
                         .body(Body::empty())
                         .unwrap();
                     client.request(req)
