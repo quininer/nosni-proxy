@@ -5,7 +5,7 @@ use failure::{ Fallible, err_msg };
 use tokio::prelude::*;
 use tokio::io as aio;
 use tokio::net::TcpStream;
-use openssl::ssl::{ SslMethod, SslConnector, SslAcceptor };
+use openssl::ssl::{ SslMethod, SslConnector, SslAcceptor, AlpnError };
 use tokio_openssl::{ ConnectConfigurationExt, SslAcceptorExt };
 use hyper::{ StatusCode, Request, Response, Body };
 use hyper::service::Service;
@@ -82,11 +82,20 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
                         .get(&name)?;
                     if let Some(protocol) = remote.get_ref().ssl()
                         .selected_alpn_protocol()
+                        .map(ToOwned::to_owned)
                     {
-                        let mut buf = Vec::with_capacity(protocol.len() + 1);
-                        buf.push(protocol.len() as u8);
-                        buf.extend_from_slice(protocol);
-                        builder.set_alpn_protos(&buf)?;
+                        builder.set_alpn_select_callback(move |_, buf| {
+                            let mut index = 0;
+                            while index < buf.len() {
+                                let n = buf[index] as usize;
+                                index += 1;
+                                if protocol == &buf[index..][..n] {
+                                    return Ok(&buf[index..][..n]);
+                                }
+                                index += n;
+                            }
+                            Err(AlpnError::NOACK)
+                        });
                     }
                     let acceptor = builder.build();
                     Ok((acceptor, remote, upgraded))
