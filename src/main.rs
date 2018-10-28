@@ -1,7 +1,6 @@
 #![feature(never_type)]
 
 mod proxy;
-mod httpfwd;
 mod httptunnel;
 
 use std::env;
@@ -24,15 +23,12 @@ fn main() -> Fallible<()> {
         SocketAddr::from(([127, 0, 0, 1], 1087))
     };
 
-    // TODO use trust-dns
-    // https://github.com/hyperium/hyper/issues/1517
-    let mut http = HttpConnector::new(4);
     let alpn = env::var("NOSNI_ALPN").ok();
     let identity = read_pkcs12(iter.next())?;
     let serv = TlsAcceptor::new(identity)?;
     let (resolver, background) = AsyncResolver::from_system_conf()?;
 
-    let forward = Proxy { alpn, http, serv, resolver };
+    let forward = Proxy { alpn, serv, resolver };
 
     let done = future::lazy(move || {
         hyper::rt::spawn(background);
