@@ -1,6 +1,6 @@
 [package]
 name = "nosni-proxy"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["quininer <quininer@live.com>"]
 edition = "2018"
 description = "No SNI"
@@ -19,8 +19,5 @@ tokio = "0.1"
 http = "0.1"
 percent-encoding = "1"
 trust-dns-resolver = "0.10.0-alpha.3"
-ttyaskpass = { git = "https://github.com/quininer/ttyaskpass", branch = "mortal" }
+ttyaskpass = "=2.0.0-alpha.5"
 mitmca = { path = "mitmca" }
-
-[patch.crates-io]
-terminfo = { git = "https://github.com/meh/rust-terminfo", rev = "abb548b47dab42c4354c6088cf5695c6d4454ed9" }

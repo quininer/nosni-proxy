@@ -55,7 +55,7 @@ fn read_pkcs12(path: Option<String>) -> Fallible<CertStore> {
     {
         const PROMPT: &str = "Password:";
 
-        if let Ok(bin) = env::var("ENE_ASKPASS") {
+        if let Ok(bin) = env::var("NOSNI_ASKPASS") {
             Command::new(bin)
                 .arg(PROMPT)
                 .output()
