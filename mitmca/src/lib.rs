@@ -70,7 +70,12 @@ impl Entry {
         let x509_name = x509_name.build();
         cert_builder.set_subject_name(&x509_name)?;
         cert_builder.set_issuer_name(cert.subject_name())?;
-
+        let serial_number = {
+            let mut serial = BigNum::new()?;
+            serial.rand(159, MsbOption::MAYBE_ZERO, false)?;
+            serial.to_asn1_integer()?
+        };
+        cert_builder.set_serial_number(&serial_number)?;
         let not_before = Asn1Time::days_from_now(0)?;
         cert_builder.set_not_before(&not_before)?;
         let not_after = Asn1Time::days_from_now(32)?;
