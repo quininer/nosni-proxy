@@ -1,11 +1,9 @@
-use std::env;
-use std::borrow::Cow;
 use std::net::SocketAddr;
 use failure::{ Fallible, err_msg };
 use tokio::prelude::*;
 use tokio::io as aio;
 use tokio::net::TcpStream;
-use openssl::ssl::{ SslMethod, SslConnector, SslAcceptor, AlpnError };
+use openssl::ssl::{ SslMethod, SslConnector, AlpnError };
 use tokio_openssl::{ ConnectConfigurationExt, SslAcceptorExt };
 use hyper::{ StatusCode, Request, Response, Body };
 use hyper::service::Service;

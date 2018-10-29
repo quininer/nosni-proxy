@@ -12,21 +12,15 @@ members = [ "mitmca" ]
 [dependencies]
 failure = "0.1"
 bytes = "0.4"
-native-tls = "0.2"
-tokio-tls = "0.2"
-openssl = "*"
-tokio-openssl = "*"
-hyper-tls = "0.3"
+openssl = "0.10"
+tokio-openssl = "0.2"
 hyper = "0.12"
 tokio = "0.1"
 http = "0.1"
-percent-encoding = "*"
+percent-encoding = "1"
 trust-dns-resolver = "0.10.0-alpha.3"
 ttyaskpass = { git = "https://github.com/quininer/ttyaskpass", branch = "mortal" }
 mitmca = { path = "mitmca" }
-
-rustls = "*"
-tokio-rustls = "*"
 
 [patch.crates-io]
 terminfo = { git = "https://github.com/meh/rust-terminfo", rev = "abb548b47dab42c4354c6088cf5695c6d4454ed9" }

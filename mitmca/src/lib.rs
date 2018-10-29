@@ -1,21 +1,21 @@
-use std::env;
 use std::sync::Arc;
 use std::borrow::{ Cow, Borrow };
+use failure::Fail;
 use openssl::asn1::Asn1Time;
 use openssl::error::ErrorStack;
 use openssl::hash::MessageDigest;
 use openssl::bn::{ BigNum, MsbOption };
-use openssl::pkey::{ PKey, PKeyRef, Private };
 use openssl::pkcs12::ParsedPkcs12;
-use openssl::ec::{ EcKey, EcGroup };
 use openssl::ssl::{ SslAcceptorBuilder, SslAcceptor, SslMethod };
-use openssl::nid::Nid;
-use openssl::x509::{ X509, X509Name, X509NameBuilder, X509Ref, X509Req, X509ReqBuilder };
+use openssl::x509::{ X509, X509NameBuilder };
 use openssl::x509::extension::{
     AuthorityKeyIdentifier, BasicConstraints, KeyUsage,
     SubjectAlternativeName, SubjectKeyIdentifier
 };
+use publicsuffix::{ List, errors::ErrorKind };
 use lru_time_cache::LruCache;
+use lazy_static::lazy_static;
+use if_chain::if_chain;
 
 
 pub struct Entry(pub ParsedPkcs12);
@@ -25,23 +25,57 @@ pub struct CertStore {
     cache: LruCache<String, Arc<X509>>
 }
 
+#[derive(Debug, Fail)]
+pub enum Error {
+    #[fail(display = "openssl error: {}", _0)]
+    OpenSSL(ErrorStack),
+
+    #[fail(display = "publicsuffix parse error: {}", _0)]
+    PubSuffix(ErrorKind)
+}
+
 impl CertStore {
-    fn get_cert(&mut self, name: &str) -> Result<Arc<X509>, ErrorStack> {
+    fn get_cert(&mut self, name: &str) -> Result<Arc<X509>, Error> {
         let CertStore { entry, cache } = self;
 
-        if let Some(cert) = cache.get(name) {
+        lazy_static!{
+            static ref LIST: List = {
+                const PUB_SUFFIX_LIST: &str = include_str!("../public_suffix_list.dat");
+
+                List::from_str(PUB_SUFFIX_LIST).unwrap()
+            };
+        }
+
+        let name = if_chain!{
+            if let publicsuffix::Host::Domain(domain) = LIST.parse_host(name)?;
+            if let Some(root) = domain.root();
+            then {
+                let mut name2 = name[..name.len() - root.len()].split('.')
+                    .filter(|c| !c.is_empty())
+                    .fold(String::new(), |mut sum, _| {
+                        sum.push_str("*.");
+                        sum
+                    });
+                name2.push_str(root);
+                Cow::Owned(name2)
+            } else {
+                Cow::Borrowed(name)
+            }
+        };
+
+        if let Some(cert) = cache.get(&*name) {
             // TODO check cert time
 
             Ok(cert.clone())
         } else {
-            let cert = entry.make(name)?;
-            let cert = cache.entry(name.to_owned())
+            let cert = entry.make(&name)?;
+            let cert = cache.entry(name.into_owned())
                 .or_insert_with(move || Arc::new(cert));
             Ok(cert.clone())
         }
     }
 
-    pub fn get(&mut self, name: &str) -> Result<SslAcceptorBuilder, ErrorStack> {
+    pub fn get(&mut self, name: &str) -> Result<SslAcceptorBuilder, Error> {
         let mut builder = SslAcceptor::mozilla_modern(SslMethod::tls())?;
         let cert = self.get_cert(name)?;
         builder.set_private_key(self.entry.0.pkey.as_ref())?;
@@ -110,6 +144,18 @@ impl Entry {
         let cert = cert_builder.build();
 
         Ok(cert)
+    }
+}
+
+impl From<ErrorStack> for Error {
+    fn from(err: ErrorStack) -> Error {
+        Error::OpenSSL(err)
+    }
+}
+
+impl From<publicsuffix::Error> for Error {
+    fn from(err: publicsuffix::Error) -> Error {
+        Error::PubSuffix(err.0)
     }
 }
 

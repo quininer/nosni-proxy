@@ -2,8 +2,6 @@ use std::sync::{ Arc, Mutex };
 use tokio::prelude::*;
 use hyper::{ Method, StatusCode, Request, Response, Body };
 use hyper::service::Service;
-use hyper::client::HttpConnector;
-use native_tls::{ TlsConnector, TlsAcceptor };
 use trust_dns_resolver::AsyncResolver;
 use mitmca::CertStore;
 use crate::httptunnel;
