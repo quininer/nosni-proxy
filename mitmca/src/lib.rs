@@ -68,10 +68,9 @@ impl CertStore {
 
             Ok(cert.clone())
         } else {
-            let cert = entry.make(&name)?;
-            let cert = cache.entry(name.into_owned())
-                .or_insert_with(move || Arc::new(cert));
-            Ok(cert.clone())
+            let cert = Arc::new(entry.make(&name)?);
+            cache.insert(name.into_owned(), cert.clone());
+            Ok(cert)
         }
     }
 

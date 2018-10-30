@@ -6,7 +6,7 @@ use hyper::rt::{ self, Future };
 use hyper_rustls::HttpsConnector;
 
 
-const UA: &static str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36";
+const UA: &'static str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36";
 
 fn main() -> io::Result<()> {
     let mut iter = env::args().skip(1);

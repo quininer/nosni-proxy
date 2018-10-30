@@ -3,6 +3,9 @@
 All browsers send SNI, but not all websites require SNI.
 Removing SNI from these requests is a good way to protect privacy.
 
+Note that this is not a perfect solution because the Server certificate will still leak information.
+The real solution needs to wait for [ESNI](https://tools.ietf.org/html/draft-ietf-tls-esni-02).
+
 ## Usage
 
 ```

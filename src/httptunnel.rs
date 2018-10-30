@@ -63,6 +63,7 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
                             .next()
                             .ok_or_else(|| err_msg("ip not found")))
                         .and_then(move |ip| {
+                            eprintln!(">>> {:?}", ip);
                             let addr = SocketAddr::from((ip, port));
                             TcpStream::connect(&addr)
                                 .map_err(Into::into)
