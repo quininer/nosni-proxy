@@ -83,18 +83,9 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
                         .selected_alpn_protocol()
                         .map(ToOwned::to_owned)
                     {
-                        builder.set_alpn_select_callback(move |_, buf| {
-                            let mut index = 0;
-                            while index < buf.len() {
-                                let n = buf[index] as usize;
-                                index += 1;
-                                if protocol == &buf[index..][..n] {
-                                    return Ok(&buf[index..][..n]);
-                                }
-                                index += n;
-                            }
-                            Err(AlpnError::NOACK)
-                        });
+                        builder.set_alpn_select_callback(move |_, buf|
+                            alpn_select_callback(&protocol, buf)
+                        );
                     }
                     let acceptor = builder.build();
                     Ok((acceptor, remote, upgraded))
@@ -125,4 +116,23 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
         });
 
     Ok(Box::new(done))
+}
+
+#[no_panic::no_panic]
+fn alpn_select_callback<'a>(protocol: &[u8], buf: &'a [u8]) -> Result<&'a [u8], AlpnError> {
+    let mut index = 0;
+    while index < buf.len() {
+        let n = buf.get(index)
+            .map(|&n|n as usize)
+            .ok_or(AlpnError::ALERT_FATAL)?;
+        index += 1;
+        let protocol2 = buf
+            .get(index..index + n)
+            .ok_or(AlpnError::ALERT_FATAL)?;
+        if protocol == protocol2 {
+            return Ok(protocol2);
+        }
+        index += n;
+    }
+    Err(AlpnError::NOACK)
 }

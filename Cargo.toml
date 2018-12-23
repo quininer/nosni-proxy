@@ -11,6 +11,7 @@ members = [ "scan", "mitmca" ]
 
 [dependencies]
 failure = "0.1"
+no-panic = "0.1"
 bytes = "0.4"
 openssl = "0.10"
 tokio-openssl = "0.2"
