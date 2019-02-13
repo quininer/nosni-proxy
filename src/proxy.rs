@@ -21,7 +21,7 @@ impl Service for Proxy {
     type Future = Box<Future<Item=Response<Self::ResBody>, Error=Self::Error> + 'static + Send>;
 
     fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
-        println!(">> {:?}", (req.uri().host(), req.uri().port()));
+        println!(">> {:?}", (req.uri().host(), req.uri().port_u16()));
 
         if Method::CONNECT == req.method() {
             if let Ok(resp) = httptunnel::call(self, req) {

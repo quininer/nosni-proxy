@@ -24,7 +24,7 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
     let Proxy { alpn, ca, resolver } = proxy;
     let ca = ca.clone();
     let resolver = resolver.clone();
-    let port = req.uri().port().unwrap_or(443);
+    let port = req.uri().port_u16().unwrap_or(443);
     let maybe_alpn = req.headers()
         .get("ALPN")
         .and_then(|val| val.to_str().ok())
@@ -91,7 +91,8 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
                     Ok((acceptor, remote, upgraded))
                 })
                 .and_then(|(acceptor, remote, upgraded)| {
-                    let fut = acceptor.accept_async(upgraded).map_err(Into::into);
+                    let fut = acceptor.accept_async(upgraded)
+                        .map_err(|err| failure::err_msg(err.to_string()));
                     and!(fut, remote)
                 })
                 .and_then(|(local, remote)| {

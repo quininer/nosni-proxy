@@ -14,7 +14,7 @@ failure = "0.1"
 no-panic = "0.1"
 bytes = "0.4"
 openssl = "0.10"
-tokio-openssl = "0.2"
+tokio-openssl = "0.3"
 hyper = "0.12"
 tokio = "0.1"
 http = "0.1"
@@ -22,3 +22,6 @@ percent-encoding = "1"
 trust-dns-resolver = { version = "0.10", features = ["dns-over-openssl"] }
 ttyaskpass = "=2.0.0-alpha.5"
 mitmca = { path = "mitmca" }
+
+[profile.dev]
+opt-level = 1
