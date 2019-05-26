@@ -1,4 +1,5 @@
 use std::sync::{ Arc, Mutex };
+use std::collections::HashMap;
 use tokio::prelude::*;
 use hyper::{ Method, StatusCode, Request, Response, Body };
 use hyper::service::Service;
@@ -11,7 +12,8 @@ use crate::httptunnel;
 pub struct Proxy {
     pub alpn: Option<String>,
     pub ca: Arc<Mutex<CertStore>>,
-    pub resolver: AsyncResolver
+    pub resolver: AsyncResolver,
+    pub mapping: HashMap<String, Option<String>>
 }
 
 impl Service for Proxy {

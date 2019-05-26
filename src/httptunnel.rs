@@ -21,7 +21,7 @@ macro_rules! and {
 pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
     -> Fallible<<Proxy as Service>::Future>
 {
-    let Proxy { alpn, ca, resolver } = proxy;
+    let Proxy { alpn, ca, resolver, .. } = proxy;
     let ca = ca.clone();
     let resolver = resolver.clone();
     let port = req.uri().port_u16().unwrap_or(443);

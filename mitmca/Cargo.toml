@@ -11,6 +11,8 @@ openssl = "0.10"
 lru_time_cache = "0.8"
 lazy_static = "1"
 if_chain = "0.1"
+rcgen = "*"
+webpki = "*"
 
 [build-dependencies]
 publicsuffix = { version = "1", default-features = false }

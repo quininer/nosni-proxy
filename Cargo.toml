@@ -23,6 +23,12 @@ trust-dns-resolver = { version = "0.10", features = ["dns-over-openssl"] }
 ttyaskpass = "=2.0.0-alpha.5"
 mitmca = { path = "mitmca" }
 
+structopt = "*"
+regex = "*"
+serde = { version = "*", features = ["derive"] }
+toml = "*"
+directories = "*"
+
 [features]
 vendored = ["openssl/vendored"]
 

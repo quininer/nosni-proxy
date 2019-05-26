@@ -3,31 +3,57 @@
 mod proxy;
 mod httptunnel;
 
-use std::env;
+use std::{ env, fs };
 use std::net::SocketAddr;
 use std::sync::{ Arc, Mutex };
+use std::path::{ PathBuf, Path };
+use std::collections::HashMap;
 use failure::Fallible;
+use serde::Deserialize;
 use tokio::prelude::*;
 use hyper::server::Server;
 use trust_dns_resolver::AsyncResolver;
+use structopt::StructOpt;
+use directories::ProjectDirs;
 use mitmca::{ Entry, CertStore };
 use crate::proxy::Proxy;
 
 
+#[derive(StructOpt)]
+struct Options {
+    #[structopt(short="c", long="config")]
+    config: Option<PathBuf>
+}
+
+#[derive(Deserialize)]
+struct Config {
+    bind: SocketAddr,
+    alpn: Option<String>,
+    cert: PathBuf,
+    mapping: HashMap<String, Option<String>>
+}
+
+
 fn main() -> Fallible<()> {
-    let mut iter = env::args().skip(1);
+    let options = Options::from_args();
 
-    let addr = if let Some(addr) = iter.next() {
-        addr.parse()?
-    } else {
-        SocketAddr::from(([127, 0, 0, 1], 1087))
-    };
+    let config_path = options.config
+        .or_else(|| {
+            ProjectDirs::from("", "", env!("CARGO_PKG_NAME"))
+                .map(|dir| dir.config_dir().join("config.toml"))
+        })
+        .ok_or_else(|| failure::err_msg("missing config"))?;
+    let config: Config = toml::from_slice(&fs::read(&config_path)?)?;
 
-    let alpn = env::var("NOSNI_ALPN").ok();
-    let ca = Arc::new(Mutex::new(read_pkcs12(iter.next())?));
+    let addr = config.bind;
+    let cert_path = config_path
+        .parent()
+        .unwrap_or(&config_path)
+        .join(&config.cert);
+    let ca = Arc::new(Mutex::new(read_pkcs12(&cert_path)?));
     let (resolver, background) = AsyncResolver::from_system_conf()?;
 
-    let forward = Proxy { alpn, ca, resolver };
+    let forward = Proxy { ca, resolver, alpn: config.alpn, mapping: config.mapping };
 
     let done = future::lazy(move || {
         hyper::rt::spawn(background);
@@ -44,8 +70,7 @@ fn main() -> Fallible<()> {
 }
 
 
-fn read_pkcs12(path: Option<String>) -> Fallible<CertStore> {
-    use std::fs;
+fn read_pkcs12(path: &Path) -> Fallible<CertStore> {
     use std::process::Command;
     use openssl::pkcs12::Pkcs12;
 
@@ -68,9 +93,6 @@ fn read_pkcs12(path: Option<String>) -> Fallible<CertStore> {
             ttyaskpass::askpass(PROMPT, f)
         }
     }
-
-    let path = path.or_else(|| env::var("NOSNI_P12_PATH").ok())
-        .ok_or_else(|| failure::err_msg("need pkcs12"))?;
 
     askpass(|pass| {
         let pkcs12 = Pkcs12::from_der(fs::read(path)?.as_ref())?
