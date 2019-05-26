@@ -1,12 +1,12 @@
 [package]
-name = "nosni-scan"
+name = "nosni-check"
 version = "0.1.0"
 authors = ["quininer <quininer@live.com>"]
 edition = "2018"
 
 [dependencies]
-rustls = "0.13"
-futures = "0.1"
+structopt = "0.2"
+tokio = "0.1"
+tokio-rustls = "0.10.0-alpha.3"
 hyper = "0.12"
-hyper-rustls = "0.14"
-webpki-roots = "0.15"
+webpki-roots = "0.16"

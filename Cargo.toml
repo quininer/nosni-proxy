@@ -7,7 +7,7 @@ description = "No SNI"
 license = "CC0-1.0"
 
 [workspace]
-members = [ "scan", "mitmca" ]
+members = [ "check", "mitmca" ]
 
 [dependencies]
 failure = "0.1"
@@ -22,6 +22,9 @@ percent-encoding = "1"
 trust-dns-resolver = { version = "0.10", features = ["dns-over-openssl"] }
 ttyaskpass = "=2.0.0-alpha.5"
 mitmca = { path = "mitmca" }
+
+[features]
+vendored = ["openssl/vendored"]
 
 [profile.dev]
 opt-level = 1
