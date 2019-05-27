@@ -5,7 +5,7 @@ use tokio::io as aio;
 use tokio::net::TcpStream;
 use openssl::ssl::{ SslMethod, SslConnector, AlpnError };
 use tokio_openssl::{ ConnectConfigurationExt, SslAcceptorExt };
-use hyper::{ StatusCode, Request, Response, Body };
+use hyper::{ Request, Response, Body };
 use hyper::service::Service;
 use percent_encoding::percent_decode;
 use crate::proxy::Proxy;
@@ -48,75 +48,71 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
         .configure()?
         .use_server_name_indication(false);
 
-    let done = req.uri().host()
+    let hostname = req.uri()
+        .host()
         .map(ToOwned::to_owned)
-        .ok_or_else(|| err_msg("missing host"))
-        .into_future()
-        .map(move |name| {
-            let fut = req.into_body()
-                .on_upgrade()
-                .map_err(failure::Error::from)
-                .and_then(move |upgraded| {
-                    let fut = resolver.lookup_ip(name.as_str())
+        .ok_or_else(|| err_msg("missing host"))?;
+    let sniname = proxy.mapping.get(&hostname)
+        .cloned()
+        .unwrap_or_else(|| hostname.clone());
+
+    let fut = req.into_body()
+        .on_upgrade()
+        .map_err(failure::Error::from)
+        .and_then(move |upgraded| {
+            let fut = resolver.lookup_ip(hostname.as_str())
+                .map_err(Into::into)
+                .and_then(|lookup| lookup.iter()
+                    .next()
+                    .ok_or_else(|| err_msg("ip not found")))
+                .and_then(move |ip| {
+                    println!(">>> {:?}", ip);
+                    let addr = SocketAddr::from((ip, port));
+                    TcpStream::connect(&addr)
                         .map_err(Into::into)
-                        .and_then(|lookup| lookup.iter()
-                            .next()
-                            .ok_or_else(|| err_msg("ip not found")))
-                        .and_then(move |ip| {
-                            eprintln!(">>> {:?}", ip);
-                            let addr = SocketAddr::from((ip, port));
-                            TcpStream::connect(&addr)
-                                .map_err(Into::into)
-                                .and_then(move |remote| {
-                                    let fut = connector.connect_async(&name, remote)
-                                        .map_err(Into::into);
-                                    and!(fut, name)
-                                })
-                        });
-                    and!(fut, upgraded)
-                })
-                .and_then(move |((remote, name), upgraded)| {
-                    let mut builder = ca.lock()
-                        .map_err(|_| err_msg("deadlock"))?
-                        .get(&name)?;
-                    if let Some(protocol) = remote.get_ref().ssl()
-                        .selected_alpn_protocol()
-                        .map(ToOwned::to_owned)
-                    {
-                        builder.set_alpn_select_callback(move |_, buf|
-                            alpn_select_callback(&protocol, buf)
-                        );
-                    }
-                    let acceptor = builder.build();
-                    Ok((acceptor, remote, upgraded))
-                })
-                .and_then(|(acceptor, remote, upgraded)| {
-                    let fut = acceptor.accept_async(upgraded)
-                        .map_err(|err| failure::err_msg(err.to_string()));
-                    and!(fut, remote)
-                })
-                .and_then(|(local, remote)| {
-                    let (remote_read, remote_write) = remote.split();
-                    let (local_read, local_write) = local.split();
-
-                    aio::copy(remote_read, local_write)
-                        .map(drop)
-                        .select2(aio::copy(local_read, remote_write).map(drop))
-                        .map(drop)
-                        .map_err(|res| res.split().0.into())
-                })
-                .map_err(|err| eprintln!("{:?}", err));
-
-            hyper::rt::spawn(fut);
-            Response::new(Body::empty())
+                        .and_then(move |remote| {
+                            let fut = connector.connect_async(&sniname, remote)
+                                .map_err(Into::into);
+                            and!(fut, hostname)
+                        })
+                });
+            and!(fut, upgraded)
         })
-        .or_else(|err| {
-            let mut resp = Response::new(Body::from(format!("{:?}", err)));
-            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            Ok(resp)
-        });
+        .and_then(move |((remote, name), upgraded)| {
+            let mut builder = ca.lock()
+                .map_err(|_| err_msg("deadlock"))?
+                .get(&name)?;
+            if let Some(protocol) = remote.get_ref().ssl()
+                .selected_alpn_protocol()
+                .map(ToOwned::to_owned)
+            {
+                builder.set_alpn_select_callback(move |_, buf|
+                    alpn_select_callback(&protocol, buf)
+                );
+            }
+            let acceptor = builder.build();
+            Ok((acceptor, remote, upgraded))
+        })
+        .and_then(|(acceptor, remote, upgraded)| {
+            let fut = acceptor.accept_async(upgraded)
+                .map_err(|err| failure::err_msg(err.to_string()));
+            and!(fut, remote)
+        })
+        .and_then(|(local, remote)| {
+            let (remote_read, remote_write) = remote.split();
+            let (local_read, local_write) = local.split();
 
-    Ok(Box::new(done))
+            aio::copy(remote_read, local_write)
+                .map(drop)
+                .select2(aio::copy(local_read, remote_write).map(drop))
+                .map(drop)
+                .map_err(|res| res.split().0.into())
+        })
+        .map_err(|err| eprintln!("connect: {:?}", err));
+
+    hyper::rt::spawn(fut);
+
+    Ok(Box::new(future::ok(Response::new(Body::empty()))))
 }
 
 #[no_panic::no_panic]
@@ -124,7 +120,7 @@ fn alpn_select_callback<'a>(protocol: &[u8], buf: &'a [u8]) -> Result<&'a [u8], 
     let mut index = 0;
     while index < buf.len() {
         let n = buf.get(index)
-            .map(|&n|n as usize)
+            .map(|&n| n as usize)
             .ok_or(AlpnError::ALERT_FATAL)?;
         index += 1;
         let protocol2 = buf

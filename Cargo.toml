@@ -19,15 +19,14 @@ hyper = "0.12"
 tokio = "0.1"
 http = "0.1"
 percent-encoding = "1"
-trust-dns-resolver = { version = "0.10", features = ["dns-over-openssl"] }
+trust-dns-resolver = { version = "0.11", features = ["dns-over-openssl"] }
 ttyaskpass = "=2.0.0-alpha.5"
 mitmca = { path = "mitmca" }
 
-structopt = "*"
-regex = "*"
-serde = { version = "*", features = ["derive"] }
-toml = "*"
-directories = "*"
+structopt = "0.2"
+serde = { version = "1", features = ["derive"] }
+toml = "0.5"
+directories = "2"
 
 [features]
 vendored = ["openssl/vendored"]

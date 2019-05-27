@@ -13,7 +13,7 @@ pub struct Proxy {
     pub alpn: Option<String>,
     pub ca: Arc<Mutex<CertStore>>,
     pub resolver: AsyncResolver,
-    pub mapping: HashMap<String, Option<String>>
+    pub mapping: HashMap<String, String>
 }
 
 impl Service for Proxy {
@@ -26,13 +26,19 @@ impl Service for Proxy {
         println!(">> {:?}", (req.uri().host(), req.uri().port_u16()));
 
         if Method::CONNECT == req.method() {
-            if let Ok(resp) = httptunnel::call(self, req) {
-                return resp;
+            match httptunnel::call(self, req) {
+                Ok(resp) => resp,
+                Err(err) => {
+                    eprintln!("call: {:?}", err);
+                    let mut resp = Response::new(Body::empty());
+                    *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    Box::new(future::ok(resp))
+                }
             }
+        } else {
+            let mut resp = Response::new(Body::empty());
+            *resp.status_mut() = StatusCode::BAD_REQUEST;
+            Box::new(future::ok(resp))
         }
-
-        let mut resp = Response::new(Body::empty());
-        *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-        Box::new(future::ok(resp))
     }
 }

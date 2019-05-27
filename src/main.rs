@@ -30,7 +30,7 @@ struct Config {
     bind: SocketAddr,
     alpn: Option<String>,
     cert: PathBuf,
-    mapping: HashMap<String, Option<String>>
+    mapping: HashMap<String, String>
 }
 
 
@@ -53,7 +53,13 @@ fn main() -> Fallible<()> {
     let ca = Arc::new(Mutex::new(read_pkcs12(&cert_path)?));
     let (resolver, background) = AsyncResolver::from_system_conf()?;
 
-    let forward = Proxy { ca, resolver, alpn: config.alpn, mapping: config.mapping };
+    println!("mapping: {:#?}", config.mapping);
+
+    let forward = Proxy {
+        ca, resolver,
+        alpn: config.alpn,
+        mapping: config.mapping
+    };
 
     let done = future::lazy(move || {
         hyper::rt::spawn(background);
@@ -61,7 +67,7 @@ fn main() -> Fallible<()> {
         let srv = Server::bind(&addr)
             .serve(move || future::ok::<_, !>(forward.clone()));
         println!("bind: {:?}", srv.local_addr());
-        srv.map_err(|err| eprintln!("{:?}", err))
+        srv.map_err(|err| eprintln!("proxy: {:?}", err))
     });
 
     hyper::rt::run(done);
