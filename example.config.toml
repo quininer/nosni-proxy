@@ -1,0 +1,5 @@
+bind = "127.0.0.1:1087"
+alpn = "h2, http%2F1.1"
+cert = "./ca-cert.p12"
+
+[mapping]
