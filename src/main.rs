@@ -30,7 +30,8 @@ struct Config {
     bind: SocketAddr,
     alpn: Option<String>,
     cert: PathBuf,
-    mapping: HashMap<String, String>
+    mapping: HashMap<String, String>,
+    hosts: Option<HashMap<String, String>>
 }
 
 
@@ -58,7 +59,8 @@ fn main() -> Fallible<()> {
     let forward = Proxy {
         ca, resolver,
         alpn: config.alpn,
-        mapping: config.mapping
+        mapping: config.mapping,
+        hosts: config.hosts.unwrap_or_default()
     };
 
     let done = future::lazy(move || {

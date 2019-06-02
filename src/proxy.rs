@@ -13,14 +13,15 @@ pub struct Proxy {
     pub alpn: Option<String>,
     pub ca: Arc<Mutex<CertStore>>,
     pub resolver: AsyncResolver,
-    pub mapping: HashMap<String, String>
+    pub mapping: HashMap<String, String>,
+    pub hosts: HashMap<String, String>
 }
 
 impl Service for Proxy {
     type ReqBody = Body;
     type ResBody = Body;
     type Error = hyper::Error;
-    type Future = Box<Future<Item=Response<Self::ResBody>, Error=Self::Error> + 'static + Send>;
+    type Future = Box<dyn Future<Item=Response<Self::ResBody>, Error=Self::Error> + 'static + Send>;
 
     fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
         println!(">> {:?}", (req.uri().host(), req.uri().port_u16()));

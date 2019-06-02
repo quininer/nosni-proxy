@@ -52,6 +52,9 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
         .host()
         .map(ToOwned::to_owned)
         .ok_or_else(|| err_msg("missing host"))?;
+    let target = proxy.hosts.get(&hostname)
+        .cloned()
+        .unwrap_or_else(|| hostname.clone());
     let sniname = proxy.mapping.get(&hostname)
         .cloned()
         .unwrap_or_else(|| hostname.clone());
@@ -60,7 +63,7 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
         .on_upgrade()
         .map_err(failure::Error::from)
         .and_then(move |upgraded| {
-            let fut = resolver.lookup_ip(hostname.as_str())
+            let fut = resolver.lookup_ip(target.as_str())
                 .map_err(Into::into)
                 .and_then(|lookup| lookup.iter()
                     .next()

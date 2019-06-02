@@ -905,7 +905,6 @@ dependencies = [
  "no-panic 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "openssl 0.10.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "percent-encoding 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "regex 1.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.91 (registry+https://github.com/rust-lang/crates.io-index)",
  "structopt 0.2.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",

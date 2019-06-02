@@ -3,7 +3,7 @@ use std::error::Error;
 use std::path::Path;
 
 
-fn main() -> Result<(), Box<Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let target = Path::new("public_suffix_list.dat");
 
     if !target.is_file() {
