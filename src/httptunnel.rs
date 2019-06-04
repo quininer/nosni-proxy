@@ -44,9 +44,6 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
             });
         tls_builder.set_alpn_protos(&alpn)?;
     }
-    let connector = tls_builder.build()
-        .configure()?
-        .use_server_name_indication(false);
 
     let hostname = req.uri()
         .host()
@@ -56,8 +53,11 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
         .cloned()
         .unwrap_or_else(|| hostname.clone());
     let sniname = proxy.mapping.get(&hostname)
-        .cloned()
-        .unwrap_or_else(|| hostname.clone());
+        .cloned();
+    let connector = tls_builder.build()
+        .configure()?
+        .use_server_name_indication(sniname.is_some());
+    let sniname = sniname.unwrap_or_else(|| hostname.clone());
 
     let fut = req.into_body()
         .on_upgrade()
