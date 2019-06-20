@@ -3,7 +3,7 @@
 mod proxy;
 mod httptunnel;
 
-use std::{ env, fs };
+use std::fs;
 use std::net::SocketAddr;
 use std::sync::{ Arc, Mutex };
 use std::path::{ PathBuf, Path };
@@ -22,7 +22,11 @@ use crate::proxy::Proxy;
 #[derive(StructOpt)]
 struct Options {
     #[structopt(short="c", long="config")]
-    config: Option<PathBuf>
+    config: Option<PathBuf>,
+
+    /// generate cert and key
+    #[structopt(long="gen")]
+    gen: Option<String>
 }
 
 #[derive(Deserialize)]
@@ -30,6 +34,7 @@ struct Config {
     bind: SocketAddr,
     alpn: Option<String>,
     cert: PathBuf,
+    key: PathBuf,
     mapping: HashMap<String, String>,
     hosts: Option<HashMap<String, String>>
 }
@@ -37,6 +42,12 @@ struct Config {
 
 fn main() -> Fallible<()> {
     let options = Options::from_args();
+
+    if let Some(name) = options.gen {
+        gen(&name)?;
+        return Ok(());
+    }
+
 
     let config_path = options.config
         .or_else(|| {
@@ -51,7 +62,11 @@ fn main() -> Fallible<()> {
         .parent()
         .unwrap_or(&config_path)
         .join(&config.cert);
-    let ca = Arc::new(Mutex::new(read_pkcs12(&cert_path)?));
+    let key_path = config_path
+        .parent()
+        .unwrap_or(&config_path)
+        .join(&config.key);
+    let ca = Arc::new(Mutex::new(read_root_cert(&cert_path, &key_path)?));
     let (resolver, background) = AsyncResolver::from_system_conf()?;
 
     println!("mapping: {:#?}", config.mapping);
@@ -77,34 +92,40 @@ fn main() -> Fallible<()> {
     Ok(())
 }
 
+fn gen(name: &str) -> Fallible<()> {
+    use rustyline::Editor;
+    use rand::{ Rng, rngs::OsRng };
 
-fn read_pkcs12(path: &Path) -> Fallible<CertStore> {
-    use std::process::Command;
-    use openssl::pkcs12::Pkcs12;
+    let mut rng = OsRng::new()?;
 
-    fn askpass<F, T>(f: F)
-        -> Fallible<T>
-        where F: FnOnce(&str) -> Fallible<T>
-    {
-        const PROMPT: &str = "Password:";
+    let mut rl = Editor::<()>::new();
+    let san = rl.readline("subject alt names> ")?
+        .split(',')
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let on = rl.readline("organization name> ")?;
+    let cn = rl.readline("common name> ")?;
 
-        if let Ok(bin) = env::var("NOSNI_ASKPASS") {
-            Command::new(bin)
-                .arg(PROMPT)
-                .output()
-                .map_err(Into::into)
-                .and_then(|output| {
-                    let pw = String::from_utf8(output.stdout)?;
-                    f(&pw)
-                })
-        } else {
-            ttyaskpass::askpass(PROMPT, f)
-        }
-    }
+    let mut params = rcgen::CertificateParams::default();
+    params.serial_number = Some(rng.gen());
+    params.subject_alt_names = san;
+    params.distinguished_name.push(rcgen::DnType::OrganizationName, on);
+    params.distinguished_name.push(rcgen::DnType::CommonName, cn);
+    params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    let ca_cert = rcgen::Certificate::from_params(params)?;
 
-    askpass(|pass| {
-        let pkcs12 = Pkcs12::from_der(fs::read(path)?.as_ref())?
-            .parse(pass)?;
-        Ok(CertStore::from(Entry(pkcs12)))
-    })
+    let cert = ca_cert.serialize_pem()?;
+    let key = ca_cert.serialize_private_key_pem();
+
+    fs::write(format!("{}-ca-cert.pem", name), cert.as_bytes())?;
+    fs::write(format!("{}-ca.pem", name), key.as_bytes())?;
+
+    Ok(())
+}
+
+fn read_root_cert(cert_path: &Path, key_path: &Path) -> Fallible<CertStore> {
+    let cert_buf = fs::read_to_string(cert_path)?;
+    let key_buf = fs::read_to_string(key_path)?;
+    let entry = Entry::from_pem(&cert_buf, &key_buf)?;
+    Ok(CertStore::from(entry))
 }

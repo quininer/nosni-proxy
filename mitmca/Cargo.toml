@@ -7,12 +7,16 @@ edition = "2018"
 [dependencies]
 failure = "0.1"
 publicsuffix = { version = "1", default-features = false }
-openssl = "0.10"
 lru_time_cache = "0.8"
 lazy_static = "1"
 if_chain = "0.1"
-rcgen = "*"
-webpki = "*"
+rand = "0.6"
+rustls = "0.15"
+rcgen = { version = "0.4", features = [ "x509-parser" ] }
+
+[dev-dependencies]
+webpki = "0.19"
+untrusted = "0.6"
 
 [build-dependencies]
 publicsuffix = { version = "1", default-features = false }

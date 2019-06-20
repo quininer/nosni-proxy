@@ -1,41 +1,39 @@
-use std::sync::Arc;
-use std::borrow::{ Cow, Borrow };
+use std::convert::TryFrom;
+use std::borrow::Cow;
 use failure::Fail;
-use openssl::asn1::Asn1Time;
-use openssl::error::ErrorStack;
-use openssl::hash::MessageDigest;
-use openssl::bn::{ BigNum, MsbOption };
-use openssl::pkcs12::ParsedPkcs12;
-use openssl::ssl::{ SslAcceptorBuilder, SslAcceptor, SslMethod };
-use openssl::x509::{ X509, X509NameBuilder };
-use openssl::x509::extension::{
-    AuthorityKeyIdentifier, BasicConstraints, KeyUsage,
-    SubjectAlternativeName, SubjectKeyIdentifier
-};
+use rcgen::RcgenError;
 use publicsuffix::{ List, errors::ErrorKind };
 use lru_time_cache::LruCache;
 use lazy_static::lazy_static;
 use if_chain::if_chain;
 
 
-pub struct Entry(pub ParsedPkcs12);
+pub struct Entry {
+    entry: rcgen::Certificate
+}
 
 pub struct CertStore {
     pub entry: Entry,
-    cache: LruCache<String, Arc<X509>>
+    cache: LruCache<String, rustls::Certificate>
 }
 
 #[derive(Debug, Fail)]
 pub enum Error {
-    #[fail(display = "openssl error: {}", _0)]
-    OpenSSL(ErrorStack),
+    #[fail(display = "rcgen error: {}", _0)]
+    Rcgen(RcgenError),
 
     #[fail(display = "publicsuffix parse error: {}", _0)]
-    PubSuffix(ErrorKind)
+    PubSuffix(ErrorKind),
+
+    #[fail(display = "load certs failed",)]
+    LoadCerts,
+
+    #[fail(display = "rustls error: {}", _0)]
+    Rustls(rustls::TLSError)
 }
 
 impl CertStore {
-    fn get_cert(&mut self, name: &str) -> Result<Arc<X509>, Error> {
+    pub fn get(&mut self, name: &str) -> Result<rustls::ServerConfig, Error> {
         let CertStore { entry, cache } = self;
 
         lazy_static!{
@@ -63,24 +61,23 @@ impl CertStore {
             }
         };
 
-        if let Some(cert) = cache.get(&*name) {
+        let cert = if let Some(cert) = cache.get(&*name){
             // TODO check cert time
 
-            Ok(cert.clone())
+            cert.clone()
         } else {
-            let cert = Arc::new(entry.make(&name)?);
+            let cert = entry.make(&name)?;
             cache.insert(name.into_owned(), cert.clone());
-            Ok(cert)
-        }
-    }
+            cert
+        };
 
-    pub fn get(&mut self, name: &str) -> Result<SslAcceptorBuilder, Error> {
-        let mut builder = SslAcceptor::mozilla_modern(SslMethod::tls())?;
-        let cert = self.get_cert(name)?;
-        builder.set_private_key(self.entry.0.pkey.as_ref())?;
-        builder.set_certificate(cert.as_ref())?;
-        builder.check_private_key()?;
-        Ok(builder)
+        let mut config = rustls::ServerConfig::new(rustls::NoClientAuth::new());
+//        let mut chain = self.entry.chain.clone();
+//        chain.push(cert);
+        let chain = vec![cert];
+        let key = rustls::PrivateKey(self.entry.entry.serialize_private_key_der());
+        config.set_single_cert(chain, key)?;
+        Ok(config)
     }
 }
 
@@ -91,65 +88,47 @@ impl From<Entry> for CertStore {
 }
 
 impl Entry {
-    pub fn make(&self, cn: &str) -> Result<X509, ErrorStack> {
-        let Entry(ParsedPkcs12 { pkey, cert, .. }) = self;
-        let mut cert_builder = X509::builder()?;
+    pub fn from_pem(cert_input: &str, key_input: &str) -> Result<Entry, Error> {
+        let kp = rcgen::KeyPair::from_pem(key_input)?;
+        let params = rcgen::CertificateParams::from_ca_cert_pem(cert_input, kp)?;
+        let entry = rcgen::Certificate::from_params(params)?;
 
-        let mut x509_name = X509NameBuilder::new()?;
-        x509_name.append_entry_by_text("C", "CN")?;
-        x509_name.append_entry_by_text("ST", "GZ")?;
-        x509_name.append_entry_by_text("O", "MITM CA")?;
-        x509_name.append_entry_by_text("CN", cn)?;
-        let x509_name = x509_name.build();
-        cert_builder.set_subject_name(&x509_name)?;
-        cert_builder.set_issuer_name(cert.subject_name())?;
-        let serial_number = {
-            let mut serial = BigNum::new()?;
-            serial.rand(159, MsbOption::MAYBE_ZERO, false)?;
-            serial.to_asn1_integer()?
-        };
-        cert_builder.set_version(2)?;
-        cert_builder.set_serial_number(&serial_number)?;
-        let not_before = Asn1Time::days_from_now(0)?;
-        cert_builder.set_not_before(&not_before)?;
-        let not_after = Asn1Time::days_from_now(32)?;
-        cert_builder.set_not_after(&not_after)?;
+        Ok(Entry { entry })
+    }
 
-        cert_builder.append_extension(BasicConstraints::new().build()?)?;
+    pub fn make(&self, cn: &str) -> Result<rustls::Certificate, Error> {
+        let Entry { entry } = self;
 
-        cert_builder.append_extension(KeyUsage::new()
-            .critical()
-            .non_repudiation()
-            .digital_signature()
-            .key_encipherment()
-            .build()?)?;
+        let kp = entry.serialize_private_key_der();
+        let kp = rcgen::KeyPair::try_from(&*kp)?;
 
-        let subject_key_identifier =
-            SubjectKeyIdentifier::new().build(&cert_builder.x509v3_context(Some(cert), None))?;
-        cert_builder.append_extension(subject_key_identifier)?;
+        let mut params = rcgen::CertificateParams::default();
+        params.subject_alt_names.push(cn.into());
+        params.serial_number = Some(rand::random());
+        params.distinguished_name.push(rcgen::DnType::OrganizationName, "MITM CA");
+        params.distinguished_name.push(rcgen::DnType::CommonName, cn);
+        params.key_pair = Some(kp);
 
-        let auth_key_identifier = AuthorityKeyIdentifier::new()
-            .keyid(false)
-            .issuer(false)
-            .build(&cert_builder.x509v3_context(Some(cert), None))?;
-        cert_builder.append_extension(auth_key_identifier)?;
+        // TODO
+        // not_before
+        // not_after
 
-        let subject_alt_name = SubjectAlternativeName::new()
-            .dns(cn)
-            .build(&cert_builder.x509v3_context(Some(cert), None))?;
-        cert_builder.append_extension(subject_alt_name)?;
+        let der = rcgen::Certificate::from_params(params)?
+            .serialize_der_with_signer(entry)?;
 
-        cert_builder.set_pubkey(cert.public_key()?.borrow())?;
-        cert_builder.sign(pkey.borrow(), MessageDigest::sha256())?;
-        let cert = cert_builder.build();
-
-        Ok(cert)
+        Ok(rustls::Certificate(der))
     }
 }
 
-impl From<ErrorStack> for Error {
-    fn from(err: ErrorStack) -> Error {
-        Error::OpenSSL(err)
+impl From<RcgenError> for Error {
+    fn from(err: RcgenError) -> Error {
+        Error::Rcgen(err)
+    }
+}
+
+impl From<rustls::TLSError> for Error {
+    fn from(err: rustls::TLSError) -> Error {
+        Error::Rustls(err)
     }
 }
 
@@ -159,20 +138,31 @@ impl From<publicsuffix::Error> for Error {
     }
 }
 
-
-/*
 #[test]
-fn test_mitmca() -> Result<(), ErrorStack> {
-    use openssl::x509::X509VerifyResult;
+fn test_mitmca() {
+    use webpki::{ self, EndEntityCert, Time, TLSServerTrustAnchors };
+    use webpki::trust_anchor_util::cert_der_as_trust_anchor;
+    use untrusted::Input;
 
-    let mut cert_store = CertStore::new("nosni")?;
-    let cert = cert_store.get("test.dev")?;
+    let mut params = rcgen::CertificateParams::default();
+    params.subject_alt_names.push("localhost".into());
+    params.distinguished_name.push(rcgen::DnType::OrganizationName, "MITM CA");
+    params.distinguished_name.push(rcgen::DnType::CommonName, "MITM CA");
+    params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    let ca_cert = rcgen::Certificate::from_params(params).unwrap();
 
-    assert_eq!(
-        X509VerifyResult::OK,
-        cert_store.ca.1.issued(cert.as_ref().borrow())
-    );
+    let entry = Entry { entry: ca_cert };
+    let ca_cert_der = entry.entry.serialize_der().unwrap();
+    let trust_anchor_list = &[cert_der_as_trust_anchor(Input::from(&ca_cert_der)).unwrap()];
+    let trust_anchors = TLSServerTrustAnchors(trust_anchor_list);
+    let rustls::Certificate(cert) = entry.make("localhost.dev").unwrap();
 
-    Ok(())
+    let end_entity_cert = EndEntityCert::from(Input::from(&cert)).unwrap();
+    let time = Time::from_seconds_since_unix_epoch(0x40_00_00_00);
+    end_entity_cert.verify_is_valid_tls_server_cert(
+            &[&webpki::ECDSA_P256_SHA256],
+            &trust_anchors,
+            &[Input::from(&ca_cert_der)],
+            time,
+    ).expect("valid TLS server cert");
 }
-*/

@@ -1,10 +1,12 @@
+use std::sync::Arc;
 use std::net::SocketAddr;
+use lazy_static::lazy_static;
 use failure::{ Fallible, err_msg };
 use tokio::prelude::*;
 use tokio::io as aio;
 use tokio::net::TcpStream;
-use openssl::ssl::{ SslMethod, SslConnector, AlpnError };
-use tokio_openssl::{ ConnectConfigurationExt, SslAcceptorExt };
+use tokio_rustls::{ rustls, webpki, TlsAcceptor, TlsConnector };
+use tokio_rustls::rustls::Session;
 use hyper::{ Request, Response, Body };
 use hyper::service::Service;
 use percent_encoding::percent_decode;
@@ -18,6 +20,11 @@ macro_rules! and {
 }
 
 
+lazy_static!{
+    static ref LOCAL_SESSION_CACHE: Arc<rustls::ServerSessionMemoryCache> = rustls::ServerSessionMemoryCache::new(32);
+    static ref REMOTE_SESSION_CACHE: Arc<rustls::ClientSessionMemoryCache> = rustls::ClientSessionMemoryCache::new(32);
+}
+
 pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
     -> Fallible<<Proxy as Service>::Future>
 {
@@ -30,19 +37,17 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
         .and_then(|val| val.to_str().ok())
         .or_else(|| alpn.as_ref().map(String::as_str));
 
-    let mut tls_builder = SslConnector::builder(SslMethod::tls())?;
+    let mut tls_config = rustls::ClientConfig::new();
     if let Some(val) = maybe_alpn {
         let alpn = val.split(',')
             .filter_map(|protocol| percent_decode(protocol.trim().as_bytes())
                 .decode_utf8()
                 .ok())
             .fold(Vec::new(), |mut sum, next| {
-                let next = next.as_bytes();
-                sum.push(next.len() as u8);
-                sum.extend_from_slice(next);
+                sum.push(next.into_owned().into_bytes());
                 sum
             });
-        tls_builder.set_alpn_protos(&alpn)?;
+        tls_config.set_protocols(&alpn);
     }
 
     let hostname = req.uri()
@@ -54,10 +59,17 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
         .unwrap_or_else(|| hostname.clone());
     let sniname = proxy.mapping.get(&hostname)
         .cloned();
-    let connector = tls_builder.build()
-        .configure()?
-        .use_server_name_indication(sniname.is_some());
-    let sniname = sniname.unwrap_or_else(|| hostname.clone());
+    let dnsname = sniname
+        .as_ref()
+        .unwrap_or(&hostname);
+    let dnsname = webpki::DNSNameRef::try_from_ascii_str(dnsname)
+        .map_err(|_| err_msg("bad dnsname"))?;
+    let dnsname = dnsname.to_owned();
+
+    tls_config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+    tls_config.enable_sni = sniname.is_some();
+    tls_config.set_persistence(REMOTE_SESSION_CACHE.clone());
+    let connector = TlsConnector::from(Arc::new(tls_config));
 
     let fut = req.into_body()
         .on_upgrade()
@@ -74,7 +86,7 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
                     TcpStream::connect(&addr)
                         .map_err(Into::into)
                         .and_then(move |remote| {
-                            let fut = connector.connect_async(&sniname, remote)
+                            let fut = connector.connect(dnsname.as_ref(), remote)
                                 .map_err(Into::into);
                             and!(fut, hostname)
                         })
@@ -82,23 +94,23 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
             and!(fut, upgraded)
         })
         .and_then(move |((remote, name), upgraded)| {
-            let mut builder = ca.lock()
+            let (_, session) = remote.get_ref();
+            let alpn = session.get_alpn_protocol()
+                .map(|proto| vec![Vec::from(proto)])
+                .unwrap_or_else(Vec::new);
+
+            let mut tls_config = ca.lock()
                 .map_err(|_| err_msg("deadlock"))?
                 .get(&name)?;
-            if let Some(protocol) = remote.get_ref().ssl()
-                .selected_alpn_protocol()
-                .map(ToOwned::to_owned)
-            {
-                builder.set_alpn_select_callback(move |_, buf|
-                    alpn_select_callback(&protocol, buf)
-                );
-            }
-            let acceptor = builder.build();
+            tls_config.set_persistence(LOCAL_SESSION_CACHE.clone());
+            tls_config.set_protocols(&alpn);
+
+            let acceptor = TlsAcceptor::from(Arc::new(tls_config));
             Ok((acceptor, remote, upgraded))
         })
         .and_then(|(acceptor, remote, upgraded)| {
-            let fut = acceptor.accept_async(upgraded)
-                .map_err(|err| failure::err_msg(err.to_string()));
+            let fut = acceptor.accept(upgraded)
+                .map_err(Into::into);
             and!(fut, remote)
         })
         .and_then(|(local, remote)| {
@@ -116,23 +128,4 @@ pub fn call(proxy: &mut Proxy, req: Request<<Proxy as Service>::ReqBody>)
     hyper::rt::spawn(fut);
 
     Ok(Box::new(future::ok(Response::new(Body::empty()))))
-}
-
-#[no_panic::no_panic]
-fn alpn_select_callback<'a>(protocol: &[u8], buf: &'a [u8]) -> Result<&'a [u8], AlpnError> {
-    let mut index = 0;
-    while index < buf.len() {
-        let n = buf.get(index)
-            .map(|&n| n as usize)
-            .ok_or(AlpnError::ALERT_FATAL)?;
-        index += 1;
-        let protocol2 = buf
-            .get(index..index + n)
-            .ok_or(AlpnError::ALERT_FATAL)?;
-        if protocol == protocol2 {
-            return Ok(protocol2);
-        }
-        index += n;
-    }
-    Err(AlpnError::NOACK)
 }
