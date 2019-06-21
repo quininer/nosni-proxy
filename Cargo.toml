@@ -1,6 +1,6 @@
 [package]
 name = "nosni-proxy"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["quininer <quininer@live.com>"]
 edition = "2018"
 description = "No SNI"
@@ -29,6 +29,3 @@ structopt = "0.2"
 serde = { version = "1", features = ["derive"] }
 toml = "0.5"
 directories = "2"
-
-[profile.dev]
-opt-level = 1

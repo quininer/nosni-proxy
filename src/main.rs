@@ -69,8 +69,6 @@ fn main() -> Fallible<()> {
     let ca = Arc::new(Mutex::new(read_root_cert(&cert_path, &key_path)?));
     let (resolver, background) = AsyncResolver::from_system_conf()?;
 
-    println!("mapping: {:#?}", config.mapping);
-
     let forward = Proxy {
         ca, resolver,
         alpn: config.alpn,

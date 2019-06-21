@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use failure::Fail;
 use rcgen::RcgenError;
 use publicsuffix::{ List, errors::ErrorKind };
-use lru_time_cache::LruCache;
+use cache_2q::Cache;
 use lazy_static::lazy_static;
 use if_chain::if_chain;
 
@@ -14,7 +14,7 @@ pub struct Entry {
 
 pub struct CertStore {
     pub entry: Entry,
-    cache: LruCache<String, rustls::Certificate>
+    cache: Cache<String, rustls::Certificate>
 }
 
 #[derive(Debug, Fail)]
@@ -61,29 +61,24 @@ impl CertStore {
             }
         };
 
-        let cert = if let Some(cert) = cache.get(&*name){
-            // TODO check cert time
-
-            cert.clone()
-        } else {
-            let cert = entry.make(&name)?;
-            cache.insert(name.into_owned(), cert.clone());
-            cert
+        let cert = match cache.entry(name.into_owned()) {
+            cache_2q::Entry::Occupied(e) => e.get().clone(),
+            cache_2q::Entry::Vacant(e) => {
+                let cert = entry.make(e.key())?;
+                e.insert(cert).clone()
+            }
         };
 
         let mut config = rustls::ServerConfig::new(rustls::NoClientAuth::new());
-//        let mut chain = self.entry.chain.clone();
-//        chain.push(cert);
-        let chain = vec![cert];
         let key = rustls::PrivateKey(self.entry.entry.serialize_private_key_der());
-        config.set_single_cert(chain, key)?;
+        config.set_single_cert(vec![cert], key)?;
         Ok(config)
     }
 }
 
 impl From<Entry> for CertStore {
     fn from(entry: Entry) -> CertStore {
-        CertStore { entry, cache: LruCache::with_capacity(32) }
+        CertStore { entry, cache: Cache::new(32) }
     }
 }
 
@@ -92,7 +87,6 @@ impl Entry {
         let kp = rcgen::KeyPair::from_pem(key_input)?;
         let params = rcgen::CertificateParams::from_ca_cert_pem(cert_input, kp)?;
         let entry = rcgen::Certificate::from_params(params)?;
-
         Ok(Entry { entry })
     }
 
