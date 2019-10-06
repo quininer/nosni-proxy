@@ -48,13 +48,13 @@ impl CertStore {
             if let publicsuffix::Host::Domain(domain) = LIST.parse_host(name)?;
             if let Some(root) = domain.root();
             then {
-                let mut name2 = name[..name.len() - root.len()].split('.')
-                    .filter(|c| !c.is_empty())
-                    .fold(String::new(), |mut sum, _| {
-                        sum.push_str("*.");
-                        sum
-                    });
-                name2.push_str(root);
+                let end = name.len() - root.len();
+                let pos = name[..end].find('.').unwrap_or(end);
+                let mut name2 = String::new();
+                if !name[..end].is_empty() {
+                    name2.push('*');
+                }
+                name2.push_str(&name[pos..]);
                 Cow::Owned(name2)
             } else {
                 Cow::Borrowed(name)

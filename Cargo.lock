@@ -724,7 +724,6 @@ name = "mitmca"
 version = "0.1.0"
 dependencies = [
  "cache_2q 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "chrono 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "if_chain 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -803,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "nosni-proxy"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "directories 2.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
