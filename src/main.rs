@@ -94,12 +94,13 @@ fn gen(name: &str) -> Fallible<()> {
     use rustyline::Editor;
     use rand::{ Rng, rngs::OsRng };
 
-    let mut rng = OsRng::new()?;
+    let mut rng = OsRng;
 
     let mut rl = Editor::<()>::new();
     let san = rl.readline("subject alt names> ")?
         .split(',')
         .map(str::to_string)
+        .map(rcgen::SanType::DnsName)
         .collect::<Vec<_>>();
     let on = rl.readline("organization name> ")?;
     let cn = rl.readline("common name> ")?;

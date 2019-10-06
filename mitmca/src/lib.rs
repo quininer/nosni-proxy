@@ -97,7 +97,7 @@ impl Entry {
         let kp = rcgen::KeyPair::try_from(&*kp)?;
 
         let mut params = rcgen::CertificateParams::default();
-        params.subject_alt_names.push(cn.into());
+        params.subject_alt_names.push(rcgen::SanType::DnsName(cn.into()));
         params.serial_number = Some(rand::random());
         params.distinguished_name.push(rcgen::DnType::OrganizationName, "MITM CA");
         params.distinguished_name.push(rcgen::DnType::CommonName, cn);

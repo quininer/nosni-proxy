@@ -7,6 +7,6 @@ edition = "2018"
 [dependencies]
 structopt = "0.2"
 tokio = "0.1"
-tokio-rustls = "0.10.0-alpha.3"
+tokio-rustls = "0.10"
 hyper = "0.12"
-webpki-roots = "0.16"
+webpki-roots = "0.17"
