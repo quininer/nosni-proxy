@@ -103,10 +103,13 @@ pub fn call(proxy: &mut Proxy, req: Request<Body>)
         let (mut rr, mut rw) = split(remote);
         let (mut lr, mut lw) = split(local);
 
-        future::try_join(
+        future::select(
             copy(&mut lr, &mut rw),
             copy(&mut rr, &mut lw)
-        ).await?;
+        )
+            .await
+            .factor_first()
+            .0?;
 
         Ok(()) as anyhow::Result<()>
     };

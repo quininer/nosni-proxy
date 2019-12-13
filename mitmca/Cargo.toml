@@ -5,8 +5,8 @@ authors = ["quininer <quininer@live.com>"]
 edition = "2018"
 
 [dependencies]
-snafu = "*"
-psl = "*"
+snafu = "0.6"
+psl = "0.4"
 cache_2q = "0.10"
 rand = "0.7"
 rustls = "0.16"
