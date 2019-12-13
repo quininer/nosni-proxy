@@ -11,21 +11,21 @@ members = [ "check", "mitmca" ]
 
 [dependencies]
 lazy_static = "1"
-failure = "0.1"
-tokio-rustls = "0.10"
-webpki-roots = "0.17"
-hyper = "0.12"
-tokio = "0.1"
-http = "0.1"
+anyhow = "1"
+futures = "0.3"
+tokio-rustls = "0.12"
+webpki-roots = "0.18"
+hyper = "0.13"
+tokio = { version = "0.2", features = [ "full" ] }
 percent-encoding = "2"
-trust-dns-resolver = { version = "0.12", features = ["dns-over-rustls"] }
+trust-dns-resolver = { version = "0.18.0-alpha.2" }
 mitmca = { path = "mitmca" }
 
 rand = "0.7"
 rcgen = "0.7"
-rustyline = "4"
+rustyline = "5"
 
-structopt = "0.2"
+structopt = "0.3"
 serde = { version = "1", features = ["derive"] }
 toml = "0.5"
 directories = "2"

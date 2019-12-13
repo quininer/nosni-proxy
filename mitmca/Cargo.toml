@@ -5,11 +5,9 @@ authors = ["quininer <quininer@live.com>"]
 edition = "2018"
 
 [dependencies]
-failure = "0.1"
-publicsuffix = { version = "1", default-features = false }
+snafu = "*"
+psl = "*"
 cache_2q = "0.10"
-lazy_static = "1"
-if_chain = "1"
 rand = "0.7"
 rustls = "0.16"
 rcgen = { version = "0.7", features = [ "x509-parser" ] }
@@ -17,7 +15,3 @@ rcgen = { version = "0.7", features = [ "x509-parser" ] }
 [dev-dependencies]
 webpki = "0.21"
 untrusted = "0.7"
-
-[build-dependencies]
-publicsuffix = { version = "1", default-features = false }
-reqwest = "0.9"

@@ -1,11 +1,9 @@
 use std::convert::TryFrom;
 use std::borrow::Cow;
-use failure::Fail;
+use snafu::{ Snafu, ResultExt };
 use rcgen::RcgenError;
-use publicsuffix::{ List, errors::ErrorKind };
+use psl::{ Psl, List };
 use cache_2q::Cache;
-use lazy_static::lazy_static;
-use if_chain::if_chain;
 
 
 pub struct Entry {
@@ -17,48 +15,33 @@ pub struct CertStore {
     cache: Cache<String, rustls::Certificate>
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Snafu)]
 pub enum Error {
-    #[fail(display = "rcgen error: {}", _0)]
-    Rcgen(RcgenError),
+    #[snafu(display("rcgen error: {}", source))]
+    Rcgen { source: RcgenError },
 
-    #[fail(display = "publicsuffix parse error: {}", _0)]
-    PubSuffix(ErrorKind),
-
-    #[fail(display = "load certs failed",)]
+    #[snafu(display("load certs failed"))]
     LoadCerts,
 
-    #[fail(display = "rustls error: {}", _0)]
-    Rustls(rustls::TLSError)
+    #[snafu(display("rustls error: {}", source))]
+    Rustls { source: rustls::TLSError }
 }
 
 impl CertStore {
     pub fn get(&mut self, name: &str) -> Result<rustls::ServerConfig, Error> {
         let CertStore { entry, cache } = self;
 
-        lazy_static!{
-            static ref LIST: List = {
-                const PUB_SUFFIX_LIST: &str = include_str!("../public_suffix_list.dat");
-
-                List::from_str(PUB_SUFFIX_LIST).unwrap()
-            };
-        }
-
-        let name = if_chain!{
-            if let publicsuffix::Host::Domain(domain) = LIST.parse_host(name)?;
-            if let Some(root) = domain.root();
-            then {
-                let end = name.len() - root.len();
-                let pos = name[..end].find('.').unwrap_or(end);
-                let mut name2 = String::new();
-                if !name[..end].is_empty() {
-                    name2.push('*');
-                }
-                name2.push_str(&name[pos..]);
-                Cow::Owned(name2)
-            } else {
-                Cow::Borrowed(name)
+        let name = if let Some(suffix) = List.suffix(name) {
+            let end = name.len() - suffix.to_str().len();
+            let pos = name[..end].find('.').unwrap_or(end);
+            let mut name2 = String::new();
+            if !name[..end].is_empty() {
+                name2.push('*');
             }
+            name2.push_str(&name[pos..]);
+            Cow::Owned(name2)
+        } else {
+            Cow::Borrowed(name)
         };
 
         let cert = match cache.entry(name.into_owned()) {
@@ -71,7 +54,7 @@ impl CertStore {
 
         let mut config = rustls::ServerConfig::new(rustls::NoClientAuth::new());
         let key = rustls::PrivateKey(self.entry.entry.serialize_private_key_der());
-        config.set_single_cert(vec![cert], key)?;
+        config.set_single_cert(vec![cert], key).context(Rustls)?;
         Ok(config)
     }
 }
@@ -84,9 +67,9 @@ impl From<Entry> for CertStore {
 
 impl Entry {
     pub fn from_pem(cert_input: &str, key_input: &str) -> Result<Entry, Error> {
-        let kp = rcgen::KeyPair::from_pem(key_input)?;
-        let params = rcgen::CertificateParams::from_ca_cert_pem(cert_input, kp)?;
-        let entry = rcgen::Certificate::from_params(params)?;
+        let kp = rcgen::KeyPair::from_pem(key_input).context(Rcgen)?;
+        let params = rcgen::CertificateParams::from_ca_cert_pem(cert_input, kp).context(Rcgen)?;
+        let entry = rcgen::Certificate::from_params(params).context(Rcgen)?;
         Ok(Entry { entry })
     }
 
@@ -94,7 +77,7 @@ impl Entry {
         let Entry { entry } = self;
 
         let kp = entry.serialize_private_key_der();
-        let kp = rcgen::KeyPair::try_from(&*kp)?;
+        let kp = rcgen::KeyPair::try_from(&*kp).context(Rcgen)?;
 
         let mut params = rcgen::CertificateParams::default();
         params.subject_alt_names.push(rcgen::SanType::DnsName(cn.into()));
@@ -107,28 +90,10 @@ impl Entry {
         // not_before
         // not_after
 
-        let der = rcgen::Certificate::from_params(params)?
-            .serialize_der_with_signer(entry)?;
+        let der = rcgen::Certificate::from_params(params).context(Rcgen)?
+            .serialize_der_with_signer(entry).context(Rcgen)?;
 
         Ok(rustls::Certificate(der))
-    }
-}
-
-impl From<RcgenError> for Error {
-    fn from(err: RcgenError) -> Error {
-        Error::Rcgen(err)
-    }
-}
-
-impl From<rustls::TLSError> for Error {
-    fn from(err: rustls::TLSError) -> Error {
-        Error::Rustls(err)
-    }
-}
-
-impl From<publicsuffix::Error> for Error {
-    fn from(err: publicsuffix::Error) -> Error {
-        Error::PubSuffix(err.0)
     }
 }
 

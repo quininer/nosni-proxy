@@ -1,18 +1,19 @@
-#![feature(never_type)]
-
 mod proxy;
 mod httptunnel;
 
 use std::fs;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::{ Arc, Mutex };
 use std::path::{ PathBuf, Path };
 use std::collections::HashMap;
-use failure::Fallible;
 use serde::Deserialize;
-use tokio::prelude::*;
+use tokio::runtime::{ self, Handle };
+use hyper::rt::Executor;
 use hyper::server::Server;
+use hyper::service::{ make_service_fn, service_fn };
 use trust_dns_resolver::AsyncResolver;
+use anyhow::format_err;
 use structopt::StructOpt;
 use directories::ProjectDirs;
 use mitmca::{ Entry, CertStore };
@@ -40,7 +41,7 @@ struct Config {
 }
 
 
-fn main() -> Fallible<()> {
+fn main() -> anyhow::Result<()> {
     let options = Options::from_args();
 
     if let Some(name) = options.gen {
@@ -48,13 +49,12 @@ fn main() -> Fallible<()> {
         return Ok(());
     }
 
-
     let config_path = options.config
         .or_else(|| {
             ProjectDirs::from("", "", env!("CARGO_PKG_NAME"))
                 .map(|dir| dir.config_dir().join("config.toml"))
         })
-        .ok_or_else(|| failure::err_msg("missing config"))?;
+        .ok_or_else(|| format_err!("missing config"))?;
     let config: Config = toml::from_slice(&fs::read(&config_path)?)?;
 
     let addr = config.bind;
@@ -67,30 +67,45 @@ fn main() -> Fallible<()> {
         .unwrap_or(&config_path)
         .join(&config.key);
     let ca = Arc::new(Mutex::new(read_root_cert(&cert_path, &key_path)?));
-    let (resolver, background) = AsyncResolver::from_system_conf()?;
+    let (resolver, background) = AsyncResolver::from_system_conf()
+        .map_err(|err| format_err!("failure: {:?}", err))?;
+
+    let mut rt = runtime::Builder::new()
+        .enable_all()
+        .threaded_scheduler()
+        .build()?;
 
     let forward = Proxy {
         ca, resolver,
         alpn: config.alpn,
         mapping: config.mapping,
-        hosts: config.hosts.unwrap_or_default()
+        hosts: config.hosts.unwrap_or_default(),
+        handle: rt.handle().clone()
     };
 
-    let done = future::lazy(move || {
-        hyper::rt::spawn(background);
+    let done = async move {
+        forward.handle.spawn(background);
+
+        let make_service = make_service_fn(|_| {
+            let forward = forward.clone();
+            async move {
+                Ok::<_, !>(service_fn(move |req| proxy::call(forward.clone(), req)))
+            }
+        });
 
         let srv = Server::bind(&addr)
-            .serve(move || future::ok::<_, !>(forward.clone()));
+            .executor(HandleExecutor(forward.handle.clone()))
+            .serve(make_service);
         println!("bind: {:?}", srv.local_addr());
-        srv.map_err(|err| eprintln!("proxy: {:?}", err))
-    });
+        srv.await
+    };
 
-    hyper::rt::run(done);
+    rt.block_on(done)?;
 
     Ok(())
 }
 
-fn gen(name: &str) -> Fallible<()> {
+fn gen(name: &str) -> anyhow::Result<()> {
     use rustyline::Editor;
     use rand::{ Rng, rngs::OsRng };
 
@@ -122,9 +137,18 @@ fn gen(name: &str) -> Fallible<()> {
     Ok(())
 }
 
-fn read_root_cert(cert_path: &Path, key_path: &Path) -> Fallible<CertStore> {
+fn read_root_cert(cert_path: &Path, key_path: &Path) -> anyhow::Result<CertStore> {
     let cert_buf = fs::read_to_string(cert_path)?;
     let key_buf = fs::read_to_string(key_path)?;
     let entry = Entry::from_pem(&cert_buf, &key_buf)?;
     Ok(CertStore::from(entry))
+}
+
+#[derive(Clone)]
+struct HandleExecutor(Handle);
+
+impl<F: Future<Output = ()> + Send + 'static> Executor<F> for HandleExecutor {
+    fn execute(&self, fut: F) {
+        self.0.spawn(fut);
+    }
 }

@@ -1,7 +1,7 @@
 use std::io;
 use std::sync::Arc;
 use std::net::{ SocketAddr, ToSocketAddrs };
-use tokio::prelude::*;
+use futures_util::future::TryFutureExt;
 use tokio::net::TcpStream;
 use tokio_rustls::{ webpki, rustls, TlsConnector };
 use tokio_rustls::rustls::Session;
@@ -28,7 +28,8 @@ struct Options {
     sni: Option<String>
 }
 
-fn main() -> io::Result<()> {
+#[tokio::main]
+async fn main() -> io::Result<()> {
     let options = Options::from_args();
 
     let addr = options.addr
@@ -62,29 +63,26 @@ fn main() -> io::Result<()> {
             .insert(header::USER_AGENT, ua);
     }
 
-    let fut = TcpStream::connect(&addr)
-        .and_then(move |stream| connector.connect(sni.as_ref(), stream))
-        .and_then(|stream| {
-            let mut builder = conn::Builder::new();
-            let (_, session) = stream.get_ref();
-            if let Some(b"h2") = session.get_alpn_protocol() {
-                builder.http2_only(true);
-            }
-            builder.handshake::<_, Body>(stream)
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
-        })
-        .and_then(move |(mut sender, conn)| {
-            tokio::spawn(conn.map_err(|err| eprintln!("conn error: {:?}", err)));
+    let stream = TcpStream::connect(&addr).await?;
+    let stream = connector.connect(sni.as_ref(), stream).await?;
 
-            sender.send_request(request)
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
-        })
-        .map(|response| {
-            let (parts, _) = response.into_parts();
-            println!("parts:\n {:#?}", parts);
-        })
-        .map_err(|err| eprintln!("error: {:?}", err));
+    let mut builder = conn::Builder::new();
+    let (_, session) = stream.get_ref();
+    if let Some(b"h2") = session.get_alpn_protocol() {
+        builder.http2_only(true);
+    }
+    let (mut sender, conn) = builder.handshake::<_, Body>(stream)
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+        .await?;
 
-    tokio::run(fut);
+    tokio::spawn(conn.map_err(|err| eprintln!("conn error: {:?}", err)));
+
+    let response = sender.send_request(request)
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+        .await?;
+
+    let (parts, _) = response.into_parts();
+    println!("parts:\n {:#?}", parts);
+
     Ok(())
 }

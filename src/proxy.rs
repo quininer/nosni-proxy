@@ -1,8 +1,10 @@
+use std::pin::Pin;
+use std::future::Future;
 use std::sync::{ Arc, Mutex };
 use std::collections::HashMap;
-use tokio::prelude::*;
+use futures::future;
+use tokio::runtime::Handle;
 use hyper::{ Method, StatusCode, Request, Response, Body };
-use hyper::service::Service;
 use trust_dns_resolver::AsyncResolver;
 use mitmca::CertStore;
 use crate::httptunnel;
@@ -14,32 +16,31 @@ pub struct Proxy {
     pub ca: Arc<Mutex<CertStore>>,
     pub resolver: AsyncResolver,
     pub mapping: HashMap<String, String>,
-    pub hosts: HashMap<String, String>
+    pub hosts: HashMap<String, String>,
+    pub handle: Handle
 }
 
-impl Service for Proxy {
-    type ReqBody = Body;
-    type ResBody = Body;
-    type Error = hyper::Error;
-    type Future = Box<dyn Future<Item=Response<Self::ResBody>, Error=Self::Error> + 'static + Send>;
+pub type BoxedFuture =
+    Pin<Box<dyn Future<Output = hyper::Result<Response<Body>>> + 'static + Send>>;
 
-    fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
-        println!(">> {:?}", (req.uri().host(), req.uri().port_u16()));
+pub fn call(mut proxy: Proxy, req: Request<Body>)
+    -> BoxedFuture
+{
+    println!(">> {:?}", (req.uri().host(), req.uri().port_u16()));
 
-        if Method::CONNECT == req.method() {
-            match httptunnel::call(self, req) {
-                Ok(resp) => resp,
-                Err(err) => {
-                    eprintln!("call: {:?}", err);
-                    let mut resp = Response::new(Body::empty());
-                    *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    Box::new(future::ok(resp))
-                }
+    if Method::CONNECT == req.method() {
+        match httptunnel::call(&mut proxy, req) {
+            Ok(resp) => resp,
+            Err(err) => {
+                eprintln!("call: {:?}", err);
+                let mut resp = Response::new(Body::empty());
+                *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                Box::pin(future::ok(resp))
             }
-        } else {
-            let mut resp = Response::new(Body::empty());
-            *resp.status_mut() = StatusCode::BAD_REQUEST;
-            Box::new(future::ok(resp))
         }
+    } else {
+        let mut resp = Response::new(Body::empty());
+        *resp.status_mut() = StatusCode::BAD_REQUEST;
+        Box::pin(future::ok(resp))
     }
 }
