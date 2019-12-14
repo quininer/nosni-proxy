@@ -20,7 +20,7 @@ lazy_static!{
         rustls::ClientSessionMemoryCache::new(32);
 }
 
-pub fn call(proxy: &mut Proxy, req: Request<Body>)
+pub fn call(proxy: &Proxy, req: Request<Body>)
     -> anyhow::Result<BoxedFuture>
 {
     let Proxy { alpn, ca, resolver, handle, .. } = proxy;

@@ -23,13 +23,13 @@ pub struct Proxy {
 pub type BoxedFuture =
     Pin<Box<dyn Future<Output = hyper::Result<Response<Body>>> + 'static + Send>>;
 
-pub fn call(mut proxy: Proxy, req: Request<Body>)
+pub fn call(proxy: Arc<Proxy>, req: Request<Body>)
     -> BoxedFuture
 {
     println!(">> {:?}", (req.uri().host(), req.uri().port_u16()));
 
     if Method::CONNECT == req.method() {
-        match httptunnel::call(&mut proxy, req) {
+        match httptunnel::call(&proxy, req) {
             Ok(resp) => resp,
             Err(err) => {
                 eprintln!("call: {:?}", err);

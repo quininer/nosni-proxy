@@ -75,13 +75,13 @@ fn main() -> anyhow::Result<()> {
         .threaded_scheduler()
         .build()?;
 
-    let forward = Proxy {
+    let forward = Arc::new(Proxy {
         ca, resolver,
         alpn: config.alpn,
         mapping: config.mapping,
         hosts: config.hosts.unwrap_or_default(),
         handle: rt.handle().clone()
-    };
+    });
 
     let done = async move {
         forward.handle.spawn(background);
