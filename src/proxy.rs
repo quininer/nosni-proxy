@@ -1,5 +1,3 @@
-use std::pin::Pin;
-use std::future::Future;
 use std::sync::{ Arc, Mutex };
 use std::collections::HashMap;
 use futures::future;
@@ -20,27 +18,24 @@ pub struct Proxy {
     pub handle: Handle
 }
 
-pub type BoxedFuture =
-    Pin<Box<dyn Future<Output = hyper::Result<Response<Body>>> + 'static + Send>>;
-
 pub fn call(proxy: Arc<Proxy>, req: Request<Body>)
-    -> BoxedFuture
+    -> future::Ready<Result<Response<Body>, !>>
 {
     println!(">> {:?}", (req.uri().host(), req.uri().port_u16()));
 
     if Method::CONNECT == req.method() {
         match httptunnel::call(&proxy, req) {
-            Ok(resp) => resp,
+            Ok(()) => future::ok(Response::new(Body::empty())),
             Err(err) => {
                 eprintln!("call: {:?}", err);
                 let mut resp = Response::new(Body::empty());
                 *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                Box::pin(future::ok(resp))
+                future::ok(resp)
             }
         }
     } else {
         let mut resp = Response::new(Body::empty());
         *resp.status_mut() = StatusCode::BAD_REQUEST;
-        Box::pin(future::ok(resp))
+        future::ok(resp)
     }
 }

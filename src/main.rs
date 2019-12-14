@@ -94,6 +94,8 @@ fn main() -> anyhow::Result<()> {
         });
 
         let srv = Server::bind(&addr)
+            .http1_writev(false)
+            .tcp_nodelay(true)
             .executor(HandleExecutor(forward.handle.clone()))
             .serve(make_service);
         println!("bind: {:?}", srv.local_addr());

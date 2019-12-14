@@ -7,9 +7,9 @@ use tokio::io::{ split, copy };
 use tokio::net::TcpStream;
 use tokio_rustls::{ rustls, webpki, TlsAcceptor, TlsConnector };
 use tokio_rustls::rustls::Session;
-use hyper::{ Request, Response, Body };
+use hyper::{ Request, Body };
 use percent_encoding::percent_decode;
-use crate::proxy::{ Proxy, BoxedFuture };
+use crate::proxy::Proxy;
 
 
 
@@ -20,9 +20,7 @@ lazy_static!{
         rustls::ClientSessionMemoryCache::new(32);
 }
 
-pub fn call(proxy: &Proxy, req: Request<Body>)
-    -> anyhow::Result<BoxedFuture>
-{
+pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
     let Proxy { alpn, ca, resolver, handle, .. } = proxy;
     let ca = ca.clone();
     let resolver = resolver.clone();
@@ -110,9 +108,9 @@ pub fn call(proxy: &Proxy, req: Request<Body>)
             .0?;
 
         Ok(()) as anyhow::Result<()>
-    };
+    }.map_err(|err| eprintln!("connect: {:?}", err));
 
-    handle.spawn(fut.map_err(|err| eprintln!("connect: {:?}", err)));
+    handle.spawn(fut);
 
-    Ok(Box::pin(future::ok(Response::new(Body::empty()))))
+    Ok(())
 }
