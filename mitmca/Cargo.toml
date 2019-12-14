@@ -14,4 +14,3 @@ rcgen = { version = "0.7", features = [ "x509-parser" ] }
 
 [dev-dependencies]
 webpki = "0.21"
-untrusted = "0.7"

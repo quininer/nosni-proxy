@@ -65,17 +65,17 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
     let connector = TlsConnector::from(Arc::new(tls_config));
 
     let fut = async move {
+        let upgraded = req
+            .into_body()
+            .on_upgrade()
+            .await?;
+
         let ip = resolver.lookup_ip(target.as_str())
             .await
             .map_err(|err| format_err!("failure: {:?}", err))?
             .into_iter()
             .next()
             .ok_or_else(|| format_err!("ip not found"))?;
-
-        let upgraded = req
-            .into_body()
-            .on_upgrade()
-            .await?;
 
         println!(">>> {:?}", ip);
 

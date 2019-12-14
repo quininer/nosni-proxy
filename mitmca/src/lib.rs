@@ -31,19 +31,7 @@ impl CertStore {
     pub fn get(&mut self, name: &str) -> Result<rustls::ServerConfig, Error> {
         let CertStore { entry, cache } = self;
 
-        let name = if let Some(suffix) = List.suffix(name) {
-            let end = name.len() - suffix.to_str().len();
-            let pos = name[..end].find('.').unwrap_or(end);
-            let mut name2 = String::new();
-            if !name[..end].is_empty() {
-                name2.push('*');
-            }
-            name2.push_str(&name[pos..]);
-            Cow::Owned(name2)
-        } else {
-            Cow::Borrowed(name)
-        };
-
+        let name = take_generic(name);
         let cert = match cache.entry(name.into_owned()) {
             cache_2q::Entry::Occupied(e) => e.get().clone(),
             cache_2q::Entry::Vacant(e) => {
@@ -97,14 +85,42 @@ impl Entry {
     }
 }
 
+fn take_generic<'a>(name: &'a str) -> Cow<'a, str> {
+    static LIST: List = List;
+
+    if let Some(suffix) = LIST.suffix(name) {
+        let end = name.len() - suffix.to_str().len();
+        let pos = name[..end]
+            .trim_end_matches('.')
+            .find('.')
+            .unwrap_or(0);
+
+        let mut name2 = String::new();
+        if !name[..pos].is_empty() {
+            name2.push('*');
+        }
+        name2.push_str(&name[pos..]);
+        Cow::Owned(name2)
+    } else {
+        Cow::Borrowed(name)
+    }
+}
+
+#[test]
+fn test_generic() {
+    assert_eq!(take_generic("test"), "test");
+    assert_eq!(take_generic("test.com"), "test.com");
+    assert_eq!(take_generic("a.b.test.com"), "*.b.test.com");
+    assert_eq!(take_generic("a.test.com"), "*.test.com");
+}
+
 #[test]
 fn test_mitmca() {
     use webpki::{ self, EndEntityCert, Time, TLSServerTrustAnchors };
     use webpki::trust_anchor_util::cert_der_as_trust_anchor;
-    use untrusted::Input;
 
     let mut params = rcgen::CertificateParams::default();
-    params.subject_alt_names.push("localhost".into());
+    params.subject_alt_names.push(rcgen::SanType::DnsName("localhost".into()));
     params.distinguished_name.push(rcgen::DnType::OrganizationName, "MITM CA");
     params.distinguished_name.push(rcgen::DnType::CommonName, "MITM CA");
     params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
@@ -112,16 +128,16 @@ fn test_mitmca() {
 
     let entry = Entry { entry: ca_cert };
     let ca_cert_der = entry.entry.serialize_der().unwrap();
-    let trust_anchor_list = &[cert_der_as_trust_anchor(Input::from(&ca_cert_der)).unwrap()];
+    let trust_anchor_list = &[cert_der_as_trust_anchor(&ca_cert_der).unwrap()];
     let trust_anchors = TLSServerTrustAnchors(trust_anchor_list);
     let rustls::Certificate(cert) = entry.make("localhost.dev").unwrap();
 
-    let end_entity_cert = EndEntityCert::from(Input::from(&cert)).unwrap();
+    let end_entity_cert = EndEntityCert::from(&cert).unwrap();
     let time = Time::from_seconds_since_unix_epoch(0x40_00_00_00);
     end_entity_cert.verify_is_valid_tls_server_cert(
             &[&webpki::ECDSA_P256_SHA256],
             &trust_anchors,
-            &[Input::from(&ca_cert_der)],
+            &[&ca_cert_der],
             time,
     ).expect("valid TLS server cert");
 }
