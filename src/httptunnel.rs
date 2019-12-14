@@ -86,7 +86,8 @@ pub fn call(proxy: &Proxy, req: Request<Body>)
         remote.set_nodelay(true)?;
         let remote = connector.connect(dnsname.as_ref(), remote).await?;
 
-        let (_, session) = remote.get_ref();
+        let (io, session) = remote.get_ref();
+        io.set_nodelay(false)?;
         let alpn = session.get_alpn_protocol()
             .map(|proto| vec![Vec::from(proto)])
             .unwrap_or_else(Vec::new);
@@ -103,10 +104,7 @@ pub fn call(proxy: &Proxy, req: Request<Body>)
         let (mut rr, mut rw) = split(remote);
         let (mut lr, mut lw) = split(local);
 
-        future::select(
-            copy(&mut lr, &mut rw),
-            copy(&mut rr, &mut lw)
-        )
+        future::select(copy(&mut lr, &mut rw), copy(&mut rr, &mut lw))
             .await
             .factor_first()
             .0?;

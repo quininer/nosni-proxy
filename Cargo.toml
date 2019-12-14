@@ -7,7 +7,7 @@ description = "No SNI"
 license = "CC0-1.0"
 
 [workspace]
-members = [ "check", "mitmca" ]
+members = [ "check", "mitmca", "hook" ]
 
 [dependencies]
 lazy_static = "1"
