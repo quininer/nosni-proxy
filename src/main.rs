@@ -67,37 +67,38 @@ fn main() -> anyhow::Result<()> {
         .unwrap_or(&config_path)
         .join(&config.key);
     let ca = Arc::new(Mutex::new(read_root_cert(&cert_path, &key_path)?));
-    let (resolver, background) = AsyncResolver::from_system_conf()
-        .map_err(|err| format_err!("failure: {:?}", err))?;
 
     let mut rt = runtime::Builder::new()
         .enable_all()
         .threaded_scheduler()
         .build()?;
-
-    let forward = Arc::new(Proxy {
-        ca, resolver,
-        alpn: config.alpn,
-        mapping: config.mapping,
-        hosts: config.hosts.unwrap_or_default(),
-        handle: rt.handle().clone()
-    });
+    let handle = rt.handle().clone();
 
     let done = async move {
-        forward.handle.spawn(background);
+        let resolver = AsyncResolver::from_system_conf(handle.clone())
+            .await
+            .map_err(|err| format_err!("failure: {:?}", err))?;
+
+        let forward = Arc::new(Proxy {
+            ca, resolver,
+            alpn: config.alpn,
+            mapping: config.mapping,
+            hosts: config.hosts.unwrap_or_default(),
+            handle: handle.clone()
+        });
 
         let make_service = make_service_fn(|_| {
             let forward = forward.clone();
             async move {
-                Ok::<_, !>(service_fn(move |req| proxy::call(forward.clone(), req)))
+                Ok::<_, hyper::Error>(service_fn(move |req| proxy::call(forward.clone(), req)))
             }
         });
 
         let srv = Server::bind(&addr)
-            .executor(HandleExecutor(forward.handle.clone()))
+            .executor(HandleExecutor(handle))
             .serve(make_service);
         println!("bind: {:?}", srv.local_addr());
-        srv.await
+        srv.await.map_err(anyhow::Error::from)
     };
 
     rt.block_on(done)?;

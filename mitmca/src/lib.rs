@@ -7,7 +7,8 @@ use cache_2q::Cache;
 
 
 pub struct Entry {
-    entry: rcgen::Certificate
+    entry: rcgen::Certificate,
+    der: Vec<u8>
 }
 
 pub struct CertStore {
@@ -41,7 +42,7 @@ impl CertStore {
         };
 
         let mut config = rustls::ServerConfig::new(rustls::NoClientAuth::new());
-        let key = rustls::PrivateKey(self.entry.entry.serialize_private_key_der());
+        let key = rustls::PrivateKey(entry.der.clone());
         config.set_single_cert(vec![cert], key).context(Rustls)?;
         Ok(config)
     }
@@ -58,14 +59,14 @@ impl Entry {
         let kp = rcgen::KeyPair::from_pem(key_input).context(Rcgen)?;
         let params = rcgen::CertificateParams::from_ca_cert_pem(cert_input, kp).context(Rcgen)?;
         let entry = rcgen::Certificate::from_params(params).context(Rcgen)?;
-        Ok(Entry { entry })
+        let der = entry.serialize_private_key_der();
+        Ok(Entry { entry, der })
     }
 
     pub fn make(&self, cn: &str) -> Result<rustls::Certificate, Error> {
-        let Entry { entry } = self;
+        let Entry { entry, der } = self;
 
-        let kp = entry.serialize_private_key_der();
-        let kp = rcgen::KeyPair::try_from(&*kp).context(Rcgen)?;
+        let kp = rcgen::KeyPair::try_from(der.as_slice()).context(Rcgen)?;
 
         let mut params = rcgen::CertificateParams::default();
         params.subject_alt_names.push(rcgen::SanType::DnsName(cn.into()));
@@ -110,8 +111,8 @@ fn take_generic<'a>(name: &'a str) -> Cow<'a, str> {
 fn test_generic() {
     assert_eq!(take_generic("test"), "test");
     assert_eq!(take_generic("test.com"), "test.com");
-    assert_eq!(take_generic("a.b.test.com"), "*.b.test.com");
     assert_eq!(take_generic("a.test.com"), "*.test.com");
+    assert_eq!(take_generic("a.b.test.com"), "*.b.test.com");
 }
 
 #[test]
@@ -125,8 +126,9 @@ fn test_mitmca() {
     params.distinguished_name.push(rcgen::DnType::CommonName, "MITM CA");
     params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
     let ca_cert = rcgen::Certificate::from_params(params).unwrap();
+    let der = ca_cert.serialize_private_key_der();
 
-    let entry = Entry { entry: ca_cert };
+    let entry = Entry { entry: ca_cert, der };
     let ca_cert_der = entry.entry.serialize_der().unwrap();
     let trust_anchor_list = &[cert_der_as_trust_anchor(&ca_cert_der).unwrap()];
     let trust_anchors = TLSServerTrustAnchors(trust_anchor_list);

@@ -90,13 +90,15 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
             .map(|proto| vec![Vec::from(proto)])
             .unwrap_or_else(Vec::new);
 
-        let mut tls_config = ca.lock()
-            .map_err(|_| format_err!("deadlock"))?
-            .get(&hostname)?;
-        tls_config.set_persistence(LOCAL_SESSION_CACHE.clone());
-        tls_config.set_protocols(&alpn);
+        let acceptor = {
+            let mut tls_config = ca.lock()
+                .map_err(|_| format_err!("deadlock"))?
+                .get(&hostname)?;
+            tls_config.set_persistence(LOCAL_SESSION_CACHE.clone());
+            tls_config.set_protocols(&alpn);
+            TlsAcceptor::from(Arc::new(tls_config))
+        };
 
-        let acceptor = TlsAcceptor::from(Arc::new(tls_config));
         let local = acceptor.accept(upgraded).await?;
 
         let (mut rr, mut rw) = split(remote);

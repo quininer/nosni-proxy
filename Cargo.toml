@@ -1,6 +1,6 @@
 [package]
 name = "nosni-proxy"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["quininer <quininer@live.com>"]
 edition = "2018"
 description = "No SNI"
@@ -18,7 +18,7 @@ webpki-roots = "0.18"
 hyper = "0.13"
 tokio = { version = "0.2", features = [ "full" ] }
 percent-encoding = "2"
-trust-dns-resolver = { version = "0.18.0-alpha.2" }
+trust-dns-resolver = { version = "0.18" }
 mitmca = { path = "mitmca" }
 
 rand = "0.7"

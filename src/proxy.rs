@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use futures::future;
 use tokio::runtime::Handle;
 use hyper::{ Method, StatusCode, Request, Response, Body };
-use trust_dns_resolver::AsyncResolver;
+use trust_dns_resolver::{ AsyncResolver, TokioConnection, TokioConnectionProvider };
 use mitmca::CertStore;
 use crate::httptunnel;
 
@@ -12,14 +12,14 @@ use crate::httptunnel;
 pub struct Proxy {
     pub alpn: Option<String>,
     pub ca: Arc<Mutex<CertStore>>,
-    pub resolver: AsyncResolver,
+    pub resolver: AsyncResolver<TokioConnection, TokioConnectionProvider>,
     pub mapping: HashMap<String, String>,
     pub hosts: HashMap<String, String>,
     pub handle: Handle
 }
 
 pub fn call(proxy: Arc<Proxy>, req: Request<Body>)
-    -> future::Ready<Result<Response<Body>, !>>
+    -> future::Ready<hyper::Result<Response<Body>>>
 {
     println!(">> {:?}", (req.uri().host(), req.uri().port_u16()));
 
