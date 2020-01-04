@@ -9,10 +9,12 @@ use std::path::{ PathBuf, Path };
 use std::collections::HashMap;
 use serde::Deserialize;
 use tokio::runtime::{ self, Handle };
+use tokio_rustls::rustls;
 use hyper::rt::Executor;
 use hyper::server::Server;
 use hyper::service::{ make_service_fn, service_fn };
 use trust_dns_resolver::AsyncResolver;
+use trust_dns_resolver::config::{ ResolverConfig, NameServerConfigGroup };
 use anyhow::format_err;
 use structopt::StructOpt;
 use directories::ProjectDirs;
@@ -36,8 +38,17 @@ struct Config {
     alpn: Option<String>,
     cert: PathBuf,
     key: PathBuf,
+    doh: Option<Doh>,
     mapping: HashMap<String, String>,
     hosts: Option<HashMap<String, String>>
+}
+
+#[derive(Deserialize)]
+struct Doh {
+    addr: SocketAddr,
+    name: String,
+    #[serde(default)]
+    sni: bool
 }
 
 
@@ -75,9 +86,29 @@ fn main() -> anyhow::Result<()> {
     let handle = rt.handle().clone();
 
     let done = async move {
-        let resolver = AsyncResolver::from_system_conf(handle.clone())
-            .await
-            .map_err(|err| format_err!("failure: {:?}", err))?;
+        let resolver = if let Some(Doh { addr, name, sni }) = config.doh {
+            let mut tls_config = rustls::ClientConfig::new();
+            tls_config.enable_sni = sni;
+            tls_config.enable_early_data = true;
+            tls_config.set_protocols(&[b"h2".to_vec()]);
+            tls_config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+            let tls_config = Arc::new(tls_config);
+
+            let server = NameServerConfigGroup::from_ips_https(
+                &[addr.ip()], addr.port(),
+                name
+            );
+            let mut config = ResolverConfig::from_parts(None, Vec::new(), server);
+            config.set_tls_client_config(tls_config);
+
+            AsyncResolver::new(config, Default::default(), handle.clone())
+                .await
+                .map_err(|err| format_err!("failure: {:?}", err))?
+        } else {
+            AsyncResolver::from_system_conf(handle.clone())
+                .await
+                .map_err(|err| format_err!("failure: {:?}", err))?
+        };
 
         let forward = Arc::new(Proxy {
             ca, resolver,
