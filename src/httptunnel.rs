@@ -1,6 +1,5 @@
 use std::io;
 use std::sync::Arc;
-use std::net::SocketAddr;
 use lazy_static::lazy_static;
 use anyhow::format_err;
 use futures::future::{ self, TryFutureExt };
@@ -15,7 +14,6 @@ use crate::proxy::Proxy;
 use futures::stream::{ self, StreamExt };
 use tower_layer::Layer;
 use tower_util::{ service_fn, ServiceExt };
-use tower_limit::ConcurrencyLimit;
 use tower_happy_eyeballs::HappyEyeballsLayer;
 
 
@@ -71,9 +69,7 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
     tls_config.set_persistence(REMOTE_SESSION_CACHE.clone());
     let connector = TlsConnector::from(Arc::new(tls_config));
 
-    let make_conn =
-        service_fn(move |ip| TcpStream::connect(SocketAddr::from((ip, port))));
-    let make_conn = ConcurrencyLimit::new(make_conn, 5);
+    let make_conn = service_fn(move |ip| TcpStream::connect((ip, port)));
 
     let fut = async move {
         let upgraded = req

@@ -14,7 +14,7 @@ lazy_static = "1"
 anyhow = "1"
 futures = "0.3"
 tokio-rustls = "0.12"
-webpki-roots = "0.18"
+webpki-roots = "0.19"
 hyper = "0.13"
 tokio = { version = "0.2", features = [ "full" ] }
 percent-encoding = "2"
