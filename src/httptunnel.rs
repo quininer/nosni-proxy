@@ -85,7 +85,7 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
             .layer(make_conn)
             .oneshot(stream::iter(ips).fuse()).await?;
 
-        println!(">>> {:?}", remote.peer_addr());
+        println!(">>> {:?} => {:?}", dnsname, remote.peer_addr());
 
         remote.set_nodelay(true)?;
         let remote = connector.connect(dnsname.as_ref(), remote).await?;

@@ -1,6 +1,10 @@
 mod proxy;
 mod httptunnel;
 
+#[cfg(feature = "mimallocator")]
+#[global_allocator]
+static GLOBAL: mimallocator::Mimalloc = mimallocator::Mimalloc;
+
 use std::fs;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -14,7 +18,7 @@ use hyper::rt::Executor;
 use hyper::server::Server;
 use hyper::service::{ make_service_fn, service_fn };
 use trust_dns_resolver::AsyncResolver;
-use trust_dns_resolver::config::{ ResolverConfig, NameServerConfigGroup };
+use trust_dns_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
 use anyhow::format_err;
 use structopt::StructOpt;
 use directories::ProjectDirs;
@@ -48,7 +52,9 @@ struct Doh {
     addr: SocketAddr,
     name: String,
     #[serde(default)]
-    sni: bool
+    sni: bool,
+    #[serde(default)]
+    dnssec: bool
 }
 
 
@@ -86,22 +92,25 @@ fn main() -> anyhow::Result<()> {
     let handle = rt.handle().clone();
 
     let done = async move {
-        let resolver = if let Some(Doh { addr, name, sni }) = config.doh {
+        let resolver = if let Some(doh) = config.doh {
             let mut tls_config = rustls::ClientConfig::new();
-            tls_config.enable_sni = sni;
+            tls_config.enable_sni = doh.sni;
             tls_config.enable_early_data = true;
             tls_config.set_protocols(&[b"h2".to_vec()]);
             tls_config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
             let tls_config = Arc::new(tls_config);
 
             let server = NameServerConfigGroup::from_ips_https(
-                &[addr.ip()], addr.port(),
-                name
+                &[doh.addr.ip()], doh.addr.port(),
+                doh.name
             );
             let mut config = ResolverConfig::from_parts(None, Vec::new(), server);
             config.set_tls_client_config(tls_config);
+            let mut opts = ResolverOpts::default();
+            opts.edns0 = true;
+            opts.validate = doh.dnssec;
 
-            AsyncResolver::new(config, Default::default(), handle.clone())
+            AsyncResolver::new(config, opts, handle.clone())
                 .await
                 .map_err(|err| format_err!("failure: {:?}", err))?
         } else {

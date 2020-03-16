@@ -3,6 +3,14 @@ alpn = "h2, http%2F1.1"
 cert = "./ca-cert.pem"
 key = "./ca.pem"
 
+[doh]
+addr = "127.0.0.1:443"
+name = "your-doh-server"
+sni = false
+dnssec = true
+
 [mapping]
+"your.domain" = "fake.domain"
 
 [hosts]
+"your.domain" = "127.0.0.1"
