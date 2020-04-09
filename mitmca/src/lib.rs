@@ -2,6 +2,7 @@ use std::convert::TryFrom;
 use std::borrow::Cow;
 use snafu::{ Snafu, ResultExt };
 use rcgen::RcgenError;
+use chrono::{ DateTime, Utc, Duration };
 use psl::{ Psl, List };
 use cache_2q::Cache;
 
@@ -66,6 +67,10 @@ impl Entry {
     pub fn make(&self, cn: &str) -> Result<rustls::Certificate, Error> {
         let Entry { entry, der } = self;
 
+        thread_local!{
+            static TODAY: DateTime<Utc> = Utc::today().and_hms(0, 0, 0)
+        }
+
         let kp = rcgen::KeyPair::try_from(der.as_slice()).context(Rcgen)?;
 
         let mut params = rcgen::CertificateParams::default();
@@ -74,10 +79,10 @@ impl Entry {
         params.distinguished_name.push(rcgen::DnType::OrganizationName, "MITM CA");
         params.distinguished_name.push(rcgen::DnType::CommonName, cn);
         params.key_pair = Some(kp);
-
-        // TODO
-        // not_before
-        // not_after
+        TODAY.with(|today| {
+            params.not_before = *today - Duration::days(1);
+            params.not_after = *today + Duration::weeks(1);
+        });
 
         let der = rcgen::Certificate::from_params(params).context(Rcgen)?
             .serialize_der_with_signer(entry).context(Rcgen)?;
@@ -117,6 +122,7 @@ fn test_generic() {
 
 #[test]
 fn test_mitmca() {
+    use std::time::SystemTime;
     use webpki::{ self, EndEntityCert, Time, TLSServerTrustAnchors };
     use webpki::trust_anchor_util::cert_der_as_trust_anchor;
 
@@ -135,7 +141,7 @@ fn test_mitmca() {
     let rustls::Certificate(cert) = entry.make("localhost.dev").unwrap();
 
     let end_entity_cert = EndEntityCert::from(&cert).unwrap();
-    let time = Time::from_seconds_since_unix_epoch(0x40_00_00_00);
+    let time = Time::try_frm(SystemTime::now()).unwrap();
     end_entity_cert.verify_is_valid_tls_server_cert(
             &[&webpki::ECDSA_P256_SHA256],
             &trust_anchors,

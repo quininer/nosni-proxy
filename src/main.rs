@@ -51,8 +51,11 @@ struct Config {
 struct Doh {
     addr: SocketAddr,
     name: String,
+
     #[serde(default)]
     sni: bool,
+
+    #[cfg_attr(not(feature = "dnssec"), allow(dead_code))]
     #[serde(default)]
     dnssec: bool
 }
@@ -106,9 +109,13 @@ fn main() -> anyhow::Result<()> {
             );
             let mut config = ResolverConfig::from_parts(None, Vec::new(), server);
             config.set_tls_client_config(tls_config);
+
+            #[allow(unused_mut)]
             let mut opts = ResolverOpts::default();
-            opts.edns0 = true;
-            opts.validate = doh.dnssec;
+
+            #[cfg(feature = "dnssec")] {
+                opts.validate = doh.dnssec;
+            }
 
             AsyncResolver::new(config, opts, handle.clone())
                 .await

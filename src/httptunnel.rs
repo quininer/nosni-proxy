@@ -74,21 +74,23 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
     let fut = async move {
         let upgraded = req
             .into_body()
-            .on_upgrade()
-            .await?;
+            .on_upgrade().await
+            .map_err(|err| anyhow::Error::new(err).context("local upgraded"))?;
 
-        let ips = resolver.lookup_ip(target.as_str())
-            .await
-            .map_err(|err| format_err!("failure: {:?}", err))?;
+        let ips = resolver.lookup_ip(target.as_str()).await
+            .map_err(|err| format_err!("dns lookup failure: {:?}", err))?;
 
         let remote = HappyEyeballsLayer::new(dns_not_found)
             .layer(make_conn)
-            .oneshot(stream::iter(ips).fuse()).await?;
+            .oneshot(stream::iter(ips).fuse()).await
+            .map_err(|err| anyhow::Error::new(err).context("remote connect"))?;
 
         println!(">>> {:?} => {:?}", dnsname, remote.peer_addr());
 
         remote.set_nodelay(true)?;
-        let remote = connector.connect(dnsname.as_ref(), remote).await?;
+        let remote = connector
+            .connect(dnsname.as_ref(), remote).await
+            .map_err(|err| anyhow::Error::new(err).context("remote tls connect"))?;
 
         let (io, session) = remote.get_ref();
         io.set_nodelay(false)?;
@@ -105,7 +107,9 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
             TlsAcceptor::from(Arc::new(tls_config))
         };
 
-        let local = acceptor.accept(upgraded).await?;
+        let local = acceptor
+            .accept(upgraded).await
+            .map_err(|err| anyhow::Error::new(err).context("local tls accept"))?;
 
         let (mut rr, mut rw) = split(remote);
         let (mut lr, mut lw) = split(local);
