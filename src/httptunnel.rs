@@ -50,7 +50,7 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
     let hostname = req.uri()
         .host()
         .map(ToOwned::to_owned)
-        .ok_or_else(|| format_err!("missing host"))?;
+        .with_context(|| "missing host")?;
     let target = proxy.hosts.get(&hostname)
         .cloned()
         .unwrap_or_else(|| hostname.clone());
@@ -60,7 +60,7 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
         .as_ref()
         .unwrap_or(&hostname);
     let dnsname = webpki::DNSNameRef::try_from_ascii_str(dnsname)
-        .map_err(|_| format_err!("bad dnsname"))?;
+        .with_context(|| "bad dnsname")?;
     let dnsname = dnsname.to_owned();
 
     tls_config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
@@ -72,10 +72,10 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
         let upgraded = req
             .into_body()
             .on_upgrade().await
-            .map_err(|err| anyhow::Error::new(err).context("local upgraded"))?;
+            .with_context(|| "local upgraded")?;
 
         let ips = resolver.lookup_ip(target.as_str()).await
-            .map_err(|err| format_err!("dns lookup failure: {:?}", err))?;
+            .with_context(|| format!("dns lookup failure: {}", target))?;
 
         let make_conn = service_fn(|ip| {
             TcpStream::connect((ip, port))
@@ -90,7 +90,6 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
         let remote = HappyEyeballsLayer::new()
             .layer(make_conn)
             .oneshot(stream::iter(ips).fuse()).await
-            .map_err(anyhow::Error::new)
             .with_context(|| format!("remote connect: {}", hostname))?;
 
         let (io, session) = remote.get_ref();
@@ -114,7 +113,6 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
 
         let local = acceptor
             .accept(upgraded).await
-            .map_err(anyhow::Error::new)
             .with_context(|| format!("local tls connect: {}", hostname))?;
 
         let (mut rr, mut rw) = split(remote);
