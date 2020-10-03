@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use lazy_static::lazy_static;
 use anyhow::{ Context, format_err };
-use futures::future::TryFutureExt;
+use futures::future::{ self, TryFutureExt };
 use tokio::io::{ split, copy };
 use tokio::net::TcpStream;
 use tokio_rustls::{ rustls, webpki, TlsAcceptor, TlsConnector };
@@ -68,8 +68,6 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
     tls_config.set_persistence(REMOTE_SESSION_CACHE.clone());
     let connector = TlsConnector::from(Arc::new(tls_config));
 
-    let make_conn = service_fn(move |ip| TcpStream::connect((ip, port)));
-
     let fut = async move {
         let upgraded = req
             .into_body()
@@ -79,22 +77,28 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
         let ips = resolver.lookup_ip(target.as_str()).await
             .map_err(|err| format_err!("dns lookup failure: {:?}", err))?;
 
+        let make_conn = service_fn(|ip| {
+            TcpStream::connect((ip, port))
+                .and_then(|stream| {
+                    let ret = stream.set_nodelay(true)
+                        .map(|_| stream);
+                    future::ready(ret)
+                })
+                .and_then(|stream| connector.connect(dnsname.as_ref(), stream))
+        });
+
         let remote = HappyEyeballsLayer::new()
             .layer(make_conn)
             .oneshot(stream::iter(ips).fuse()).await
             .map_err(anyhow::Error::new)
             .with_context(|| format!("remote connect: {}", hostname))?;
 
-        println!(">>> {:?} => {:?}", dnsname, remote.peer_addr());
-
-        remote.set_nodelay(true)?;
-        let remote = connector
-            .connect(dnsname.as_ref(), remote).await
-            .map_err(anyhow::Error::new)
-            .with_context(|| format!("remote tls connect: {}", hostname))?;
-
         let (io, session) = remote.get_ref();
+
+        println!(">>> {:?} => {:?}", dnsname, io.peer_addr());
+
         io.set_nodelay(false)?;
+
         let alpn = session.get_alpn_protocol()
             .map(|proto| vec![Vec::from(proto)])
             .unwrap_or_else(Vec::new);
