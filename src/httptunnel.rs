@@ -1,8 +1,7 @@
-use std::io;
 use std::sync::Arc;
 use lazy_static::lazy_static;
-use anyhow::format_err;
-use futures::future::{ self, TryFutureExt };
+use anyhow::{ Context, format_err };
+use futures::future::TryFutureExt;
 use tokio::io::{ split, copy };
 use tokio::net::TcpStream;
 use tokio_rustls::{ rustls, webpki, TlsAcceptor, TlsConnector };
@@ -80,17 +79,19 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
         let ips = resolver.lookup_ip(target.as_str()).await
             .map_err(|err| format_err!("dns lookup failure: {:?}", err))?;
 
-        let remote = HappyEyeballsLayer::new(dns_not_found)
+        let remote = HappyEyeballsLayer::new()
             .layer(make_conn)
             .oneshot(stream::iter(ips).fuse()).await
-            .map_err(|err| anyhow::Error::new(err).context("remote connect"))?;
+            .map_err(anyhow::Error::new)
+            .with_context(|| format!("remote connect: {}", hostname))?;
 
         println!(">>> {:?} => {:?}", dnsname, remote.peer_addr());
 
         remote.set_nodelay(true)?;
         let remote = connector
             .connect(dnsname.as_ref(), remote).await
-            .map_err(|err| anyhow::Error::new(err).context("remote tls connect"))?;
+            .map_err(anyhow::Error::new)
+            .with_context(|| format!("remote tls connect: {}", hostname))?;
 
         let (io, session) = remote.get_ref();
         io.set_nodelay(false)?;
@@ -109,15 +110,18 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
 
         let local = acceptor
             .accept(upgraded).await
-            .map_err(|err| anyhow::Error::new(err).context("local tls accept"))?;
+            .map_err(anyhow::Error::new)
+            .with_context(|| format!("local tls connect: {}", hostname))?;
 
         let (mut rr, mut rw) = split(remote);
         let (mut lr, mut lw) = split(local);
 
-        future::select(copy(&mut lr, &mut rw), copy(&mut rr, &mut lw))
-            .await
-            .factor_first()
-            .0?;
+        tokio::select!{
+            ret = copy(&mut lr, &mut rw) =>
+                ret.with_context(|| format!("local to remote transfer: {}", hostname))?,
+            ret = copy(&mut rr, &mut lw) =>
+                ret.with_context(|| format!("remote to local transfer: {}", hostname))?
+        };
 
         Ok(()) as anyhow::Result<()>
     }.map_err(|err| eprintln!("connect: {:?}", err));
@@ -125,8 +129,4 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
     handle.spawn(fut);
 
     Ok(())
-}
-
-fn dns_not_found() -> io::Error {
-    io::Error::new(io::ErrorKind::NotFound, "dns lookup is empty!")
 }

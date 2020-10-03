@@ -8,6 +8,6 @@ edition = "2018"
 structopt = "0.3"
 futures-util = "0.3"
 tokio = { version = "0.2", features = [ "full" ] }
-tokio-rustls = "0.12"
+tokio-rustls = "0.14"
 hyper = "0.13"
-webpki-roots = "0.19"
+webpki-roots = "0.20"

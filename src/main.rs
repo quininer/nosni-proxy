@@ -117,13 +117,9 @@ fn main() -> anyhow::Result<()> {
                 opts.validate = doh.dnssec;
             }
 
-            AsyncResolver::new(config, opts, handle.clone())
-                .await
-                .map_err(|err| format_err!("failure: {:?}", err))?
+            AsyncResolver::new(config, opts, handle.clone())?
         } else {
-            AsyncResolver::from_system_conf(handle.clone())
-                .await
-                .map_err(|err| format_err!("failure: {:?}", err))?
+            AsyncResolver::from_system_conf(handle.clone())?
         };
 
         let forward = Arc::new(Proxy {
