@@ -18,7 +18,7 @@ webpki-roots = "0.20"
 hyper = "0.13"
 tokio = { version = "0.2", features = [ "full" ] }
 percent-encoding = "2"
-trust-dns-resolver = { version = "0.20.0-alpha.2", features = [ "dns-over-https-rustls" ] }
+trust-dns-resolver = { version = "=0.20.0-alpha.3", features = [ "dns-over-https-rustls" ] }
 mitmca = { path = "mitmca" }
 
 tower-layer = "0.3"
@@ -27,9 +27,9 @@ tower-limit = "0.3"
 tower-happy-eyeballs = { git = "https://github.com/quininer/tower-happy-eyeballs" }
 
 mimallocator = { version = "0.1", optional = true }
-rand = "0.7"
+rand = "0.8"
 rcgen = "0.8"
-rustyline = "6"
+rustyline = "7"
 
 structopt = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -37,4 +37,8 @@ toml = "0.5"
 directories = "3"
 
 [features]
+default = [ "mimallocator", "dnssec" ]
 dnssec = [ "trust-dns-resolver/dnssec-ring" ]
+
+[patch.crates-io]
+webpki-roots = { path = "../../sec/webpki-roots" }

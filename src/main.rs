@@ -105,7 +105,7 @@ fn main() -> anyhow::Result<()> {
 
             let server = NameServerConfigGroup::from_ips_https(
                 &[doh.addr.ip()], doh.addr.port(),
-                doh.name
+                doh.name, false
             );
             let mut config = ResolverConfig::from_parts(None, Vec::new(), server);
             config.set_tls_client_config(tls_config);
