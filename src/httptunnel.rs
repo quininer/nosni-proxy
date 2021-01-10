@@ -69,9 +69,7 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
     let connector = TlsConnector::from(Arc::new(tls_config));
 
     let fut = async move {
-        let upgraded = req
-            .into_body()
-            .on_upgrade().await
+        let upgraded = hyper::upgrade::on(req).await
             .with_context(|| "local upgraded")?;
 
         let ips = resolver.lookup_ip(target.as_str()).await

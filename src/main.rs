@@ -6,18 +6,16 @@ mod httptunnel;
 static GLOBAL: mimallocator::Mimalloc = mimallocator::Mimalloc;
 
 use std::fs;
-use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::{ Arc, Mutex };
 use std::path::{ PathBuf, Path };
 use std::collections::HashMap;
 use serde::Deserialize;
-use tokio::runtime::{ self, Handle };
+use tokio::runtime;
 use tokio_rustls::rustls;
-use hyper::rt::Executor;
 use hyper::server::Server;
 use hyper::service::{ make_service_fn, service_fn };
-use trust_dns_resolver::AsyncResolver;
+use trust_dns_resolver::{ TokioAsyncResolver as AsyncResolver, TokioHandle };
 use trust_dns_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
 use anyhow::format_err;
 use structopt::StructOpt;
@@ -88,9 +86,8 @@ fn main() -> anyhow::Result<()> {
         .join(&config.key);
     let ca = Arc::new(Mutex::new(read_root_cert(&cert_path, &key_path)?));
 
-    let mut rt = runtime::Builder::new()
+    let rt = runtime::Builder::new_multi_thread()
         .enable_all()
-        .threaded_scheduler()
         .build()?;
     let handle = rt.handle().clone();
 
@@ -117,9 +114,9 @@ fn main() -> anyhow::Result<()> {
                 opts.validate = doh.dnssec;
             }
 
-            AsyncResolver::new(config, opts, handle.clone())?
+            AsyncResolver::new(config, opts, TokioHandle)?
         } else {
-            AsyncResolver::from_system_conf(handle.clone())?
+            AsyncResolver::from_system_conf(TokioHandle)?
         };
 
         let forward = Arc::new(Proxy {
@@ -138,7 +135,6 @@ fn main() -> anyhow::Result<()> {
         });
 
         let srv = Server::bind(&addr)
-            .executor(HandleExecutor(handle))
             .serve(make_service);
         println!("bind: {:?}", srv.local_addr());
         srv.await.map_err(anyhow::Error::from)
@@ -186,13 +182,4 @@ fn read_root_cert(cert_path: &Path, key_path: &Path) -> anyhow::Result<CertStore
     let key_buf = fs::read_to_string(key_path)?;
     let entry = Entry::from_pem(&cert_buf, &key_buf)?;
     Ok(CertStore::from(entry))
-}
-
-#[derive(Clone)]
-struct HandleExecutor(Handle);
-
-impl<F: Future<Output = ()> + Send + 'static> Executor<F> for HandleExecutor {
-    fn execute(&self, fut: F) {
-        self.0.spawn(fut);
-    }
 }

@@ -91,7 +91,7 @@ impl Entry {
     }
 }
 
-fn take_generic<'a>(name: &'a str) -> Cow<'a, str> {
+fn take_generic(name: &str) -> Cow<'_, str> {
     static LIST: List = List;
 
     if let Some(suffix) = LIST.suffix(name) {
