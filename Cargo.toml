@@ -23,7 +23,6 @@ mitmca = { path = "mitmca" }
 
 tower-layer = "0.3"
 tower-util = "0.3"
-tower-limit = "0.3"
 tower-happy-eyeballs = { git = "https://github.com/quininer/tower-happy-eyeballs" }
 
 mimallocator = { version = "0.1", optional = true }
