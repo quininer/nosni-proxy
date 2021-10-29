@@ -1,11 +1,11 @@
 use std::sync::Arc;
+use std::convert::TryFrom;
 use lazy_static::lazy_static;
 use anyhow::{ Context, format_err };
 use futures::future::{ self, TryFutureExt };
 use tokio::io::{ split, copy };
 use tokio::net::TcpStream;
-use tokio_rustls::{ rustls, webpki, TlsAcceptor, TlsConnector };
-use tokio_rustls::rustls::Session;
+use tokio_rustls::{ rustls, TlsAcceptor, TlsConnector };
 use hyper::{ Request, Body };
 use percent_encoding::percent_decode;
 use crate::proxy::Proxy;
@@ -18,10 +18,10 @@ use tower_happy_eyeballs::HappyEyeballsLayer;
 
 
 lazy_static!{
-    static ref LOCAL_SESSION_CACHE: Arc<rustls::ServerSessionMemoryCache> =
-        rustls::ServerSessionMemoryCache::new(32);
-    static ref REMOTE_SESSION_CACHE: Arc<rustls::ClientSessionMemoryCache> =
-        rustls::ClientSessionMemoryCache::new(32);
+    static ref LOCAL_SESSION_CACHE: Arc<rustls::server::ServerSessionMemoryCache> =
+        rustls::server::ServerSessionMemoryCache::new(32);
+    static ref REMOTE_SESSION_CACHE: Arc<rustls::client::ClientSessionMemoryCache> =
+        rustls::client::ClientSessionMemoryCache::new(32);
 }
 
 pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
@@ -34,8 +34,7 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
         .and_then(|val| val.to_str().ok())
         .or_else(|| alpn.as_ref().map(String::as_str));
 
-    let mut tls_config = rustls::ClientConfig::new();
-    if let Some(val) = maybe_alpn {
+    let alpn = if let Some(val) = maybe_alpn {
         let alpn = val.split(',')
             .filter_map(|protocol| percent_decode(protocol.trim().as_bytes())
                 .decode_utf8()
@@ -44,8 +43,10 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
                 sum.push(next.into_owned().into_bytes());
                 sum
             });
-        tls_config.set_protocols(&alpn);
-    }
+        alpn
+    } else {
+        Vec::new()
+    };
 
     let hostname = req.uri()
         .host()
@@ -59,13 +60,27 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
     let dnsname = sniname
         .as_ref()
         .unwrap_or(&hostname);
-    let dnsname = webpki::DNSNameRef::try_from_ascii_str(dnsname)
-        .with_context(|| "bad dnsname")?;
+    let dnsname = rustls::ServerName::try_from(dnsname.as_str())
+        .map_err(|_| anyhow::format_err!("bad dnsname: {:?}", dnsname))?;
     let dnsname = dnsname.to_owned();
 
-    tls_config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+    let mut root_cert_store = rustls::RootCertStore::empty();
+    root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+        |ta| {
+            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                ta.subject,
+                ta.spki,
+                ta.name_constraints,
+            )
+        },
+    ));
+    let mut tls_config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(root_cert_store)
+        .with_no_client_auth();
+    tls_config.alpn_protocols = alpn;
     tls_config.enable_sni = sniname.is_some();
-    tls_config.set_persistence(REMOTE_SESSION_CACHE.clone());
+    tls_config.session_storage = REMOTE_SESSION_CACHE.clone();
     let connector = TlsConnector::from(Arc::new(tls_config));
 
     let fut = async move {
@@ -82,7 +97,7 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
                         .map(|_| stream);
                     future::ready(ret)
                 })
-                .and_then(|stream| connector.connect(dnsname.as_ref(), stream))
+                .and_then(|stream| connector.connect(dnsname.clone(), stream))
         });
 
         let remote = HappyEyeballsLayer::new()
@@ -104,8 +119,8 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
             let mut tls_config = ca.lock()
                 .map_err(|_| format_err!("deadlock"))?
                 .get(&hostname)?;
-            tls_config.set_persistence(LOCAL_SESSION_CACHE.clone());
-            tls_config.set_protocols(&alpn);
+            tls_config.session_storage = LOCAL_SESSION_CACHE.clone();
+            tls_config.alpn_protocols = alpn;
             TlsAcceptor::from(Arc::new(tls_config))
         };
 

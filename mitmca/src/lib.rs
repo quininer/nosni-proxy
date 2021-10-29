@@ -42,9 +42,11 @@ impl CertStore {
             }
         };
 
-        let mut config = rustls::ServerConfig::new(rustls::NoClientAuth::new());
-        let key = rustls::PrivateKey(entry.der.clone());
-        config.set_single_cert(vec![cert], key).context(Rustls)?;
+        let config = rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert], rustls::PrivateKey(entry.der.clone()))
+            .context(Rustls)?;
         Ok(config)
     }
 }
@@ -94,8 +96,8 @@ impl Entry {
 fn take_generic(name: &str) -> Cow<'_, str> {
     static LIST: List = List;
 
-    if let Some(suffix) = LIST.suffix(name) {
-        let end = name.len() - suffix.to_str().len();
+    if let Some(suffix) = LIST.suffix(name.as_bytes()) {
+        let end = name.len() - suffix.as_bytes().len();
         let pos = name[..end]
             .trim_end_matches('.')
             .find('.')

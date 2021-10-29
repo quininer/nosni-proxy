@@ -43,7 +43,6 @@ async fn main() -> io::Result<()> {
     let sni = options.sni
         .as_ref()
         .map(String::as_str)
-        .or_else(|| options.target.host())
         .and_then(|host| webpki::DNSNameRef::try_from_ascii_str(host).ok())
         .map(|dnsname| dnsname.to_owned())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid dnsname"))?;
