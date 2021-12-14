@@ -93,11 +93,23 @@ fn main() -> anyhow::Result<()> {
 
     let done = async move {
         let resolver = if let Some(doh) = config.doh {
-            let mut tls_config = rustls::ClientConfig::new();
+            let mut root_cert_store = rustls::RootCertStore::empty();
+            root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+                |ta| {
+                    rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                        ta.subject,
+                        ta.spki,
+                        ta.name_constraints,
+                    )
+                },
+            ));
+            let mut tls_config = rustls::ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(root_cert_store)
+                .with_no_client_auth();
+            tls_config.alpn_protocols = vec![b"h2".to_vec()];
             tls_config.enable_sni = doh.sni;
             tls_config.enable_early_data = true;
-            tls_config.set_protocols(&[b"h2".to_vec()]);
-            tls_config.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
             let tls_config = Arc::new(tls_config);
 
             let server = NameServerConfigGroup::from_ips_https(

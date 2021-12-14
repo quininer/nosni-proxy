@@ -111,7 +111,7 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
 
         io.set_nodelay(false)?;
 
-        let alpn = session.get_alpn_protocol()
+        let alpn = session.alpn_protocol()
             .map(|proto| vec![Vec::from(proto)])
             .unwrap_or_else(Vec::new);
 

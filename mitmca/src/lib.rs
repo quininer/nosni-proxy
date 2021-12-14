@@ -26,7 +26,7 @@ pub enum Error {
     LoadCerts,
 
     #[snafu(display("rustls error: {}", source))]
-    Rustls { source: rustls::TLSError }
+    Rustls { source: rustls::Error }
 }
 
 impl CertStore {
