@@ -14,4 +14,4 @@ rcgen = { version = "0.8", features = [ "x509-parser" ] }
 chrono = "0.4"
 
 [dev-dependencies]
-webpki = "0.21"
+webpki = "0.22"

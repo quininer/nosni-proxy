@@ -1,10 +1,10 @@
 use std::io;
 use std::sync::Arc;
+use std::convert::TryFrom;
 use std::net::{ SocketAddr, ToSocketAddrs };
 use futures_util::future::TryFutureExt;
 use tokio::net::TcpStream;
-use tokio_rustls::{ webpki, rustls, TlsConnector };
-use tokio_rustls::rustls::Session;
+use tokio_rustls::{ rustls, TlsConnector };
 use hyper::{ header, Uri, Body, Method, Request };
 use hyper::client::conn;
 use structopt::StructOpt;
@@ -43,16 +43,28 @@ async fn main() -> io::Result<()> {
     let sni = options.sni
         .as_ref()
         .map(String::as_str)
-        .and_then(|host| webpki::DNSNameRef::try_from_ascii_str(host).ok())
-        .map(|dnsname| dnsname.to_owned())
+        .or_else(|| options.target.host())
+        .and_then(|host| rustls::ServerName::try_from(host).ok())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid dnsname"))?;
 
-    let mut tls = rustls::ClientConfig::new();
-    tls.enable_sni = options.sni.is_some();
-    tls.set_protocols(&["h2".into(), "http/1.1".into()]);
-    tls.root_store
-        .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-    let connector = TlsConnector::from(Arc::new(tls));
+    let mut root_cert_store = rustls::RootCertStore::empty();
+    root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+        |ta| {
+            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                ta.subject,
+                ta.spki,
+                ta.name_constraints,
+            )
+        },
+    ));
+    let mut tls_config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(root_cert_store)
+        .with_no_client_auth();
+    tls_config.alpn_protocols = vec!["h2".into(), "http/1.1".into()];
+    tls_config.enable_sni = options.sni.is_some();
+
+    let connector = TlsConnector::from(Arc::new(tls_config));
 
     let mut request = Request::new(Body::empty());
     *request.method_mut() = Method::GET;
@@ -63,11 +75,11 @@ async fn main() -> io::Result<()> {
     }
 
     let stream = TcpStream::connect(&addr).await?;
-    let stream = connector.connect(sni.as_ref(), stream).await?;
+    let stream = connector.connect(sni, stream).await?;
 
     let mut builder = conn::Builder::new();
     let (_, session) = stream.get_ref();
-    if let Some(b"h2") = session.get_alpn_protocol() {
+    if let Some(b"h2") = session.alpn_protocol() {
         builder.http2_only(true);
     }
     let (mut sender, conn) = builder.handshake::<_, Body>(stream)

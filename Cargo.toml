@@ -28,12 +28,12 @@ tower-happy-eyeballs = { git = "https://github.com/quininer/tower-happy-eyeballs
 mimallocator = { version = "0.1", optional = true }
 rand = "0.8"
 rcgen = "0.8"
-rustyline = "8"
+rustyline = { version = "9", default-features = false }
 
 structopt = "0.3"
 serde = { version = "1", features = ["derive"] }
 toml = "0.5"
-directories = "3"
+directories = "4"
 
 [features]
 default = [ "mimallocator", "dnssec" ]

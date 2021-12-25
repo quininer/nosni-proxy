@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use lazy_static::lazy_static;
 use anyhow::{ Context, format_err };
 use futures::future::{ self, TryFutureExt };
-use tokio::io::{ split, copy };
+use tokio::io::copy_bidirectional;
 use tokio::net::TcpStream;
 use tokio_rustls::{ rustls, TlsAcceptor, TlsConnector };
 use hyper::{ Request, Body };
@@ -100,7 +100,7 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
                 .and_then(|stream| connector.connect(dnsname.clone(), stream))
         });
 
-        let remote = HappyEyeballsLayer::new()
+        let mut remote = HappyEyeballsLayer::new()
             .layer(make_conn)
             .oneshot(stream::iter(ips).fuse()).await
             .with_context(|| format!("remote connect: {}", hostname))?;
@@ -124,19 +124,11 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
             TlsAcceptor::from(Arc::new(tls_config))
         };
 
-        let local = acceptor
+        let mut local = acceptor
             .accept(upgraded).await
             .with_context(|| format!("local tls connect: {}", hostname))?;
 
-        let (mut rr, mut rw) = split(remote);
-        let (mut lr, mut lw) = split(local);
-
-        tokio::select!{
-            ret = copy(&mut lr, &mut rw) =>
-                ret.with_context(|| format!("local to remote transfer: {}", hostname))?,
-            ret = copy(&mut rr, &mut lw) =>
-                ret.with_context(|| format!("remote to local transfer: {}", hostname))?
-        };
+        copy_bidirectional(&mut remote, &mut local).await?;
 
         Ok(()) as anyhow::Result<()>
     }.map_err(|err| eprintln!("connect: {:?}", err));
