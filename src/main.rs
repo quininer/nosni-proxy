@@ -6,6 +6,7 @@ mod httptunnel;
 static GLOBAL: mimallocator::Mimalloc = mimallocator::Mimalloc;
 
 use std::fs;
+use std::time::Duration;
 use std::net::SocketAddr;
 use std::sync::{ Arc, Mutex };
 use std::path::{ PathBuf, Path };
@@ -119,8 +120,9 @@ fn main() -> anyhow::Result<()> {
             let mut config = ResolverConfig::from_parts(None, Vec::new(), server);
             config.set_tls_client_config(tls_config);
 
-            #[allow(unused_mut)]
             let mut opts = ResolverOpts::default();
+            opts.timeout = Duration::from_secs(2);
+            opts.attempts = 1;
 
             #[cfg(feature = "dnssec")] {
                 opts.validate = doh.dnssec;

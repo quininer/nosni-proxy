@@ -1,8 +1,8 @@
 use std::convert::TryFrom;
 use std::borrow::Cow;
-use snafu::{ Snafu, ResultExt };
+use thiserror::Error;
 use rcgen::RcgenError;
-use chrono::{ DateTime, Utc, Duration };
+use time::{ OffsetDateTime, Duration };
 use psl::{ Psl, List };
 use cache_2q::Cache;
 
@@ -17,16 +17,16 @@ pub struct CertStore {
     cache: Cache<String, rustls::Certificate>
 }
 
-#[derive(Debug, Snafu)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[snafu(display("rcgen error: {}", source))]
-    Rcgen { source: RcgenError },
+    #[error("rcgen error: {0}")]
+    Rcgen(#[from] RcgenError),
 
-    #[snafu(display("load certs failed"))]
+    #[error("load certs failed")]
     LoadCerts,
 
-    #[snafu(display("rustls error: {}", source))]
-    Rustls { source: rustls::Error }
+    #[error("rustls error: {0}")]
+    Rustls(#[from] rustls::Error)
 }
 
 impl CertStore {
@@ -45,8 +45,7 @@ impl CertStore {
         let config = rustls::ServerConfig::builder()
             .with_safe_defaults()
             .with_no_client_auth()
-            .with_single_cert(vec![cert], rustls::PrivateKey(entry.der.clone()))
-            .context(Rustls)?;
+            .with_single_cert(vec![cert], rustls::PrivateKey(entry.der.clone()))?;
         Ok(config)
     }
 }
@@ -59,9 +58,9 @@ impl From<Entry> for CertStore {
 
 impl Entry {
     pub fn from_pem(cert_input: &str, key_input: &str) -> Result<Entry, Error> {
-        let kp = rcgen::KeyPair::from_pem(key_input).context(Rcgen)?;
-        let params = rcgen::CertificateParams::from_ca_cert_pem(cert_input, kp).context(Rcgen)?;
-        let entry = rcgen::Certificate::from_params(params).context(Rcgen)?;
+        let kp = rcgen::KeyPair::from_pem(key_input)?;
+        let params = rcgen::CertificateParams::from_ca_cert_pem(cert_input, kp)?;
+        let entry = rcgen::Certificate::from_params(params)?;
         let der = entry.serialize_private_key_der();
         Ok(Entry { entry, der })
     }
@@ -70,10 +69,10 @@ impl Entry {
         let Entry { entry, der } = self;
 
         thread_local!{
-            static TODAY: DateTime<Utc> = Utc::today().and_hms(0, 0, 0)
+            static TODAY: OffsetDateTime = OffsetDateTime::now_utc();
         }
 
-        let kp = rcgen::KeyPair::try_from(der.as_slice()).context(Rcgen)?;
+        let kp = rcgen::KeyPair::try_from(der.as_slice())?;
 
         let mut params = rcgen::CertificateParams::default();
         params.subject_alt_names.push(rcgen::SanType::DnsName(cn.into()));
@@ -86,8 +85,8 @@ impl Entry {
             params.not_after = *today + Duration::weeks(1);
         });
 
-        let der = rcgen::Certificate::from_params(params).context(Rcgen)?
-            .serialize_der_with_signer(entry).context(Rcgen)?;
+        let der = rcgen::Certificate::from_params(params)?
+            .serialize_der_with_signer(entry)?;
 
         Ok(rustls::Certificate(der))
     }

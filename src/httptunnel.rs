@@ -1,10 +1,12 @@
 use std::sync::Arc;
+use std::time::Duration;
 use std::convert::TryFrom;
 use lazy_static::lazy_static;
 use anyhow::{ Context, format_err };
 use futures::future::{ self, TryFutureExt };
 use tokio::io::copy_bidirectional;
 use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tokio_rustls::{ rustls, TlsAcceptor, TlsConnector };
 use hyper::{ Request, Body };
 use percent_encoding::percent_decode;
@@ -87,7 +89,9 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
         let upgraded = hyper::upgrade::on(req).await
             .with_context(|| "local upgraded")?;
 
-        let ips = resolver.lookup_ip(target.as_str()).await
+        let ips = timeout(Duration::from_secs(5), resolver.lookup_ip(target.as_str())).await
+            .map_err(anyhow::Error::from)
+            .and_then(|ret| ret.map_err(anyhow::Error::from))
             .with_context(|| format!("dns lookup failure: {}", target))?;
 
         let make_conn = service_fn(|ip| {
@@ -128,7 +132,9 @@ pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
             .accept(upgraded).await
             .with_context(|| format!("local tls connect: {}", hostname))?;
 
-        copy_bidirectional(&mut remote, &mut local).await?;
+        copy_bidirectional(&mut local, &mut remote)
+            .await
+            .with_context(|| format!("bidirectional copy stream error: {}", hostname))?;
 
         Ok(()) as anyhow::Result<()>
     }.map_err(|err| eprintln!("connect: {:?}", err));

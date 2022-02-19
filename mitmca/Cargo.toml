@@ -5,13 +5,14 @@ authors = ["quininer <quininer@live.com>"]
 edition = "2018"
 
 [dependencies]
-snafu = "0.6"
+snafu = "0.7"
+thiserror = "1"
 psl = "2"
 cache_2q = "0.10"
 rand = "0.8"
 rustls = "0.20"
-rcgen = { version = "0.8", features = [ "x509-parser" ] }
-chrono = "0.4"
+rcgen = { version = "0.9", features = [ "x509-parser" ] }
+time = "0.3"
 
 [dev-dependencies]
 webpki = "0.22"
