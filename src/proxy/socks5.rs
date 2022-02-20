@@ -17,14 +17,14 @@ use tokio::io::{
 use tokio_rustls::{ rustls, TlsConnector, client::TlsStream };
 use trust_dns_resolver::{ AsyncResolver, TokioConnection, TokioConnectionProvider };
 
-use futures::future::{ self, TryFutureExt };
+use futures::future::{ self, FutureExt, TryFutureExt };
 use futures::stream::{ self, StreamExt };
 use tower_layer::Layer;
 use tower_util::{ service_fn, ServiceExt };
 use tower_happy_eyeballs::HappyEyeballsLayer;
 
 use mitmca::CertStore;
-use crate::config::Config;
+use crate::config::{ Config, StrOrList, Rule };
 
 
 static LOCAL_SESSION_CACHE: Lazy<Arc<rustls::server::ServerSessionMemoryCache>> =
@@ -78,13 +78,16 @@ impl Proxy {
             Address::Domain(hostname, port) => {
                 // dns query & remote connect
                 let remote = async {
-                    let lookup = {
-                        let server_name = self.config.hosts
-                            .as_ref()
-                            .and_then(|map| map.get(&hostname))
-                            .unwrap_or(&hostname);
-
-                        self.resolver.lookup_ip(server_name.as_str())
+                    let lookup = match self.config.mapping.get(&hostname)
+                        .and_then(|rule| rule.addr.as_ref())
+                    {
+                        Some(StrOrList::Str(name)) => self.resolver.lookup_ip(name)
+                            .map_ok(|ips| ips.into_iter().collect::<Vec<_>>())
+                            .boxed(),
+                        Some(StrOrList::List(list)) => future::ready(Ok(list.clone())).boxed(),
+                        None => self.resolver.lookup_ip(hostname.clone())
+                            .map_ok(|ips| ips.into_iter().collect::<Vec<_>>())
+                            .boxed()
                     };
                     let ips = timeout(Duration::from_secs(5), lookup).await
                         .map_err(anyhow::Error::from)
@@ -296,9 +299,14 @@ where
 fn build_tls_connector(proxy: &Proxy, server_name: &str)
     -> anyhow::Result<(TlsConnector, rustls::ServerName)>
 {
-    let sniname = proxy.config.mapping.get(server_name)
-        .cloned();
-    let dnsname = sniname
+    static DEFAULT_RULE: Rule = Rule {
+        alpn: Vec::new(),
+        sni: None,
+        addr: None
+    };
+
+    let rule = proxy.config.mapping.get(server_name).unwrap_or(&DEFAULT_RULE);
+    let dnsname = rule.sni
         .as_deref()
         .unwrap_or(server_name);
     let dnsname = rustls::ServerName::try_from(dnsname)
@@ -319,10 +327,16 @@ fn build_tls_connector(proxy: &Proxy, server_name: &str)
         .with_safe_defaults()
         .with_root_certificates(root_cert_store)
         .with_no_client_auth();
-    tls_config.alpn_protocols = proxy.config.alpn.iter()
-        .map(|protocol| Vec::from(protocol.as_bytes()))
-        .collect();
-    tls_config.enable_sni = sniname.is_some();
+    tls_config.alpn_protocols = if rule.alpn.is_empty() {
+        proxy.config.alpn.iter()
+            .map(|protocol| Vec::from(protocol.as_bytes()))
+            .collect()
+    } else {
+        rule.alpn.iter()
+            .map(|protocol| Vec::from(protocol.as_bytes()))
+            .collect()
+    };
+    tls_config.enable_sni = rule.sni.is_some();
     tls_config.session_storage = REMOTE_SESSION_CACHE.clone();
 
     Ok((TlsConnector::from(Arc::new(tls_config)), dnsname))

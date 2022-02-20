@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::net::SocketAddr;
+use std::net::{ SocketAddr, IpAddr };
 use std::collections::HashMap;
 use serde::Deserialize;
 
@@ -11,8 +11,22 @@ pub struct Config {
     pub cert: PathBuf,
     pub key: PathBuf,
     pub doh: Option<Doh>,
-    pub mapping: HashMap<String, String>,
-    pub hosts: Option<HashMap<String, String>>
+    pub mapping: HashMap<String, Rule>,
+}
+
+#[derive(Deserialize)]
+pub struct Rule {
+    #[serde(default)]
+    pub alpn: Vec<String>,
+    pub sni: Option<String>,
+    pub addr: Option<StrOrList<IpAddr>>
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum StrOrList<T> {
+    Str(String),
+    List(Vec<T>)
 }
 
 #[derive(Deserialize)]
