@@ -721,7 +721,6 @@ dependencies = [
  "directories",
  "futures",
  "hyper",
- "lazy_static",
  "mimallocator",
  "mitmca",
  "once_cell",

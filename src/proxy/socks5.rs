@@ -6,6 +6,7 @@ use std::net::{ SocketAddr, IpAddr, Ipv4Addr };
 use std::marker::Unpin;
 use anyhow::{ format_err, Context };
 use once_cell::sync::Lazy;
+
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio::io::{
@@ -40,7 +41,7 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub async fn call(self: Arc<Self>, stream: TcpStream) -> anyhow::Result<()> {
+    pub async fn call(self: Arc<Self>, req_id: u64, stream: TcpStream) -> anyhow::Result<()> {
         let mut stream = BufStream::with_capacity(1024, 1024, stream);
 
         // local handshake
@@ -48,7 +49,7 @@ impl Proxy {
         // Get target addr
         let addr = handshake(&mut stream).await?;
 
-        println!("{:?}", addr);
+        println!("[{:x}] start connect: {:?}", req_id, addr);
 
         let (start_handshake, remote, hostname) = match addr {
             Address::Addr(addr) => {
@@ -138,9 +139,14 @@ impl Proxy {
         let mut local = start_handshake.into_stream(tls_config).await?;
         let mut remote = remote;
 
+        {
+            let (io, _) = remote.get_ref();
+            println!("[{:x}] connected: {:?}", req_id, io.peer_addr());
+        }
+
         copy_bidirectional(&mut local, &mut remote)
             .await
-            .with_context(|| format!("bidirectional copy stream error: {}", hostname))?;
+            .with_context(|| format!("bidirectional copy stream error"))?;
 
         Ok(())
     }

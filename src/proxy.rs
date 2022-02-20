@@ -1,4 +1,3 @@
-mod httptunnel;
 mod socks5;
 
 use std::fs;
@@ -95,13 +94,14 @@ impl Options {
         loop {
             let (stream, _) = listener.accept().await?;
 
+            let req_id: u64 = rand::random();
+
             let proxy = proxy.clone();
             tokio::spawn(async move {
-                if let Err(err) = proxy.call(stream).await {
-                    eprintln!("{:?}", err);
+                if let Err(err) = proxy.call(req_id, stream).await {
+                    eprintln!("[{:x}] proxy connect error: {}", req_id, err)
                 }
             });
-
         }
     }
 }
