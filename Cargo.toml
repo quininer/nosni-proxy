@@ -7,7 +7,7 @@ description = "No SNI"
 license = "CC0-1.0"
 
 [workspace]
-members = [ "check", "mitmca", "hook" ]
+members = [ "mitmca", "hook" ]
 
 [dependencies]
 lazy_static = "1"
@@ -15,7 +15,7 @@ anyhow = "1"
 futures = "0.3"
 tokio-rustls = "0.23"
 webpki-roots = "0.22"
-hyper = { version = "0.14", features = [ "server", "runtime", "http1", "http2" ] }
+hyper = { version = "0.14", features = [ "client", "server", "runtime", "http1", "http2" ] }
 tokio = { version = "1", features = [ "full" ] }
 percent-encoding = "2"
 trust-dns-resolver = { version = "0.21.0-alpha.5", features = [ "dns-over-https-rustls" ] }
@@ -30,7 +30,7 @@ rand = "0.8"
 rcgen = "0.9"
 rustyline = { version = "9", default-features = false }
 
-structopt = "0.3"
+argh = "0.1"
 serde = { version = "1", features = ["derive"] }
 toml = "0.5"
 directories = "4"

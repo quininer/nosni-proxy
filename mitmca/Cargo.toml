@@ -5,7 +5,6 @@ authors = ["quininer <quininer@live.com>"]
 edition = "2018"
 
 [dependencies]
-snafu = "0.7"
 thiserror = "1"
 psl = "2"
 cache_2q = "0.10"

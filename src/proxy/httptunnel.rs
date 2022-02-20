@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{ Arc, Mutex };
 use std::time::Duration;
 use std::convert::TryFrom;
 use lazy_static::lazy_static;
@@ -8,15 +8,18 @@ use tokio::io::copy_bidirectional;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_rustls::{ rustls, TlsAcceptor, TlsConnector };
-use hyper::{ Request, Body };
 use percent_encoding::percent_decode;
-use crate::proxy::Proxy;
 
 use futures::stream::{ self, StreamExt };
 use tower_layer::Layer;
 use tower_util::{ service_fn, ServiceExt };
 use tower_happy_eyeballs::HappyEyeballsLayer;
 
+use std::collections::HashMap;
+use tokio::runtime::Handle;
+use hyper::{ Method, StatusCode, Request, Response, Body };
+use trust_dns_resolver::{ AsyncResolver, TokioConnection, TokioConnectionProvider };
+use mitmca::CertStore;
 
 
 lazy_static!{
@@ -24,6 +27,38 @@ lazy_static!{
         rustls::server::ServerSessionMemoryCache::new(32);
     static ref REMOTE_SESSION_CACHE: Arc<rustls::client::ClientSessionMemoryCache> =
         rustls::client::ClientSessionMemoryCache::new(32);
+}
+
+#[derive(Clone)]
+pub struct Proxy {
+    pub alpn: Option<String>,
+    pub ca: Arc<Mutex<CertStore>>,
+    pub resolver: AsyncResolver<TokioConnection, TokioConnectionProvider>,
+    pub mapping: HashMap<String, String>,
+    pub hosts: HashMap<String, String>,
+    pub handle: Handle
+}
+
+pub fn proxy_call(proxy: Arc<Proxy>, req: Request<Body>)
+    -> future::Ready<hyper::Result<Response<Body>>>
+{
+    println!(">> {:?}", (req.uri().host(), req.uri().port_u16()));
+
+    if Method::CONNECT == req.method() {
+        match call(&proxy, req) {
+            Ok(()) => future::ok(Response::new(Body::empty())),
+            Err(err) => {
+                eprintln!("call: {:?}", err);
+                let mut resp = Response::new(Body::empty());
+                *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                future::ok(resp)
+            }
+        }
+    } else {
+        let mut resp = Response::new(Body::empty());
+        *resp.status_mut() = StatusCode::BAD_REQUEST;
+        future::ok(resp)
+    }
 }
 
 pub fn call(proxy: &Proxy, req: Request<Body>) -> anyhow::Result<()> {
