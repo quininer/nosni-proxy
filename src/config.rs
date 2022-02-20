@@ -7,7 +7,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct Config {
     pub bind: SocketAddr,
-    pub alpn: Option<String>,
+    pub alpn: Vec<String>,
     pub cert: PathBuf,
     pub key: PathBuf,
     pub doh: Option<Doh>,

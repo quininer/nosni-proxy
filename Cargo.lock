@@ -724,6 +724,7 @@ dependencies = [
  "lazy_static",
  "mimallocator",
  "mitmca",
+ "once_cell",
  "percent-encoding",
  "rand",
  "rcgen",
