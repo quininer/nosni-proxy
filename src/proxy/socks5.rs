@@ -44,28 +44,34 @@ impl Proxy {
         // local handshake
         //
         // Get target addr
-        let addr = handshake(&mut stream).await?;
+        let addr = handshake(&mut stream)
+            .await
+            .context("socks5 handshake")?;
 
         println!("[{:x}] start connect: {:?}", req_id, addr);
 
         let (start_handshake, remote, hostname) = match addr {
             Address::Addr(addr) => {
                 // socks5 response
-                response(&mut stream, 0, addr).await?;
+                response(&mut stream, 0, addr).await.context("socks5 response")?;
 
                 // local tls handshake
                 let acceptor = rustls::server::Acceptor::new()?;
-                let start_handshake = tokio_rustls::LazyConfigAcceptor::new(acceptor, stream).await?;
+                let start_handshake = tokio_rustls::LazyConfigAcceptor::new(acceptor, stream)
+                    .await
+                    .context("local tls accept")?;
 
                 // Get hostname
                 let hostname = start_handshake.client_hello()
                     .server_name()
                     .map(String::from)
-                    .context("No server name")?;
+                    .context("local tls no server name")?;
 
                 // remote connect
                 let ips = std::iter::once(addr.ip());
-                let remote = remote_connect(&self, hostname.clone(), ips, addr.port()).await?;
+                let remote = remote_connect(&self, hostname.clone(), ips, addr.port())
+                    .await
+                    .context("remote connect")?;
 
                 (start_handshake, remote, hostname)
             },
@@ -85,7 +91,9 @@ impl Proxy {
                         .and_then(|ret| ret.map_err(anyhow::Error::from))
                         .with_context(|| format!("dns lookup failure: {}", hostname))?;
 
-                    remote_connect(&self, hostname.clone(), ips, port).await
+                    remote_connect(&self, hostname.clone(), ips, port)
+                        .await
+                        .context("remote connect")
                 };
 
                 // socks5 error response
@@ -101,18 +109,20 @@ impl Proxy {
                             .unwrap_or(1);
 
                         let fake_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-                        response(&mut stream, reply, fake_addr).await?;
+                        response(&mut stream, reply, fake_addr).await.context("socks5 response")?;
                         return Err(err);
                     }
                 };
 
                 // socks5 response
-                let addr = remote.get_ref().0.local_addr()?;
-                response(&mut stream, 0, addr).await?;
+                let addr = remote.get_ref().0.local_addr().context("get remote local addr failed")?;
+                response(&mut stream, 0, addr).await.context("socks5 response")?;
 
                 // tls handshake
                 let acceptor = rustls::server::Acceptor::new()?;
-                let start_handshake = tokio_rustls::LazyConfigAcceptor::new(acceptor, stream).await?;
+                let start_handshake = tokio_rustls::LazyConfigAcceptor::new(acceptor, stream)
+                    .await
+                    .context("local tls accept")?;
 
                 (start_handshake, remote, hostname)
             }
@@ -131,7 +141,7 @@ impl Proxy {
             tls_config.alpn_protocols = alpn;
             Arc::new(tls_config)
         };
-        let mut local = start_handshake.into_stream(tls_config).await?;
+        let mut local = start_handshake.into_stream(tls_config).await.context("local tls handshake")?;
         let mut remote = remote;
 
         {
@@ -141,7 +151,7 @@ impl Proxy {
 
         copy_bidirectional(&mut local, &mut remote)
             .await
-            .with_context(|| format!("bidirectional copy stream error"))?;
+            .context("bidirectional copy stream error")?;
 
         Ok(())
     }
