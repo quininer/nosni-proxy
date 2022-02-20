@@ -99,7 +99,7 @@ impl Options {
             let proxy = proxy.clone();
             tokio::spawn(async move {
                 if let Err(err) = proxy.call(req_id, stream).await {
-                    eprintln!("[{:x}] proxy connect error: {}", req_id, err)
+                    eprintln!("[{:x}] proxy connect error: {:?}", req_id, err)
                 }
             });
         }

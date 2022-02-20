@@ -11,7 +11,6 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio::io::{
     copy_bidirectional,
-    BufStream,
     AsyncRead, AsyncWrite,
     AsyncReadExt, AsyncWriteExt
 };
@@ -41,9 +40,7 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub async fn call(self: Arc<Self>, req_id: u64, stream: TcpStream) -> anyhow::Result<()> {
-        let mut stream = BufStream::with_capacity(1024, 1024, stream);
-
+    pub async fn call(self: Arc<Self>, req_id: u64, mut stream: TcpStream) -> anyhow::Result<()> {
         // local handshake
         //
         // Get target addr
@@ -57,7 +54,6 @@ impl Proxy {
                 response(&mut stream, 0, addr).await?;
 
                 // local tls handshake
-                let stream = stream.into_inner();
                 let acceptor = rustls::server::Acceptor::new()?;
                 let start_handshake = tokio_rustls::LazyConfigAcceptor::new(acceptor, stream).await?;
 
@@ -115,7 +111,6 @@ impl Proxy {
                 response(&mut stream, 0, addr).await?;
 
                 // tls handshake
-                let stream = stream.into_inner();
                 let acceptor = rustls::server::Acceptor::new()?;
                 let start_handshake = tokio_rustls::LazyConfigAcceptor::new(acceptor, stream).await?;
 
