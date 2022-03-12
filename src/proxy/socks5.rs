@@ -1,12 +1,14 @@
 use std::io;
 use std::time::Duration;
 use std::convert::TryFrom;
-use std::sync::{ Arc, Mutex };
+use std::sync::Arc;
 use std::net::{ SocketAddr, IpAddr, Ipv4Addr };
 use std::marker::Unpin;
-use anyhow::{ format_err, Context };
+use std::collections::HashMap;
+use anyhow::Context;
 use once_cell::sync::Lazy;
 
+use tokio::sync::{ Mutex, RwLock };
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio::io::{
@@ -31,7 +33,8 @@ static LOCAL_SESSION_CACHE: Lazy<Arc<rustls::server::ServerSessionMemoryCache>> 
     Lazy::new(|| rustls::server::ServerSessionMemoryCache::new(32));
 static REMOTE_SESSION_CACHE: Lazy<Arc<rustls::client::ClientSessionMemoryCache>> =
     Lazy::new(|| rustls::client::ClientSessionMemoryCache::new(32));
-
+static LOCAL_ALPN_CACHE: Lazy<RwLock<HashMap<String, Vec<Vec<u8>>>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
 
 pub struct Proxy {
     pub ca: Arc<Mutex<CertStore>>,
@@ -137,15 +140,31 @@ impl Proxy {
             let alpn = session.alpn_protocol()
                 .map(|proto| vec![Vec::from(proto)])
                 .unwrap_or_else(Vec::new);
-            let mut tls_config = self.ca.lock()
-                .map_err(|_| format_err!("bad lock"))?
-                .get(&hostname)?;
+            let mut tls_config = self.ca.lock().await.get(&hostname)?;
             tls_config.session_storage = LOCAL_SESSION_CACHE.clone();
             tls_config.alpn_protocols = alpn;
             Arc::new(tls_config)
         };
-        let mut local = start_handshake.into_stream(tls_config).await.context("local tls handshake")?;
+        let local_alpn = start_handshake.client_hello().alpn()
+            .map(|list| list.map(|s| s.into()).collect::<Vec<_>>())
+            .unwrap_or_default();
+
         let mut remote = remote;
+        let mut local = match start_handshake.into_stream(tls_config).await {
+            Ok(local) => local,
+            Err(err) => {
+                if err.get_ref()
+                    .and_then(|err| err.downcast_ref::<rustls::Error>())
+                    .filter(|err| matches!(err, rustls::Error::NoApplicationProtocol))
+                    .is_some()
+                {
+                    let mut map = LOCAL_ALPN_CACHE.write().await;
+                    map.insert(hostname, local_alpn);
+                }
+
+                return Err(err).context("local tls handshake");
+            }
+        };
 
         {
             let (io, _) = remote.get_ref();
@@ -296,7 +315,7 @@ where
     Ok(())
 }
 
-fn build_tls_connector(proxy: &Proxy, server_name: &str)
+async fn build_tls_connector(proxy: &Proxy, server_name: &str)
     -> anyhow::Result<(TlsConnector, rustls::ServerName)>
 {
     static DEFAULT_RULE: Rule = Rule {
@@ -328,9 +347,14 @@ fn build_tls_connector(proxy: &Proxy, server_name: &str)
         .with_root_certificates(root_cert_store)
         .with_no_client_auth();
     tls_config.alpn_protocols = if rule.alpn.is_empty() {
-        proxy.config.alpn.iter()
-            .map(|protocol| Vec::from(protocol.as_bytes()))
-            .collect()
+        let map = LOCAL_ALPN_CACHE.read().await;
+        if let Some(alpn) = map.get(server_name) {
+            alpn.clone()
+        } else {
+            proxy.config.alpn.iter()
+                .map(|protocol| Vec::from(protocol.as_bytes()))
+                .collect()
+        }
     } else {
         rule.alpn.iter()
             .map(|protocol| Vec::from(protocol.as_bytes()))
@@ -347,7 +371,7 @@ pub async fn remote_connect<I>(proxy: &Proxy, server_name: String, ips: I, port:
 where
     I: IntoIterator<Item = IpAddr>
 {
-    let (tls_connector, dnsname) = build_tls_connector(proxy, &server_name)?;
+    let (tls_connector, dnsname) = build_tls_connector(proxy, &server_name).await?;
 
     let make_conn = service_fn(|ip| {
         TcpStream::connect((ip, port))

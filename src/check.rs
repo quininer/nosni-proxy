@@ -1,13 +1,20 @@
-use std::io;
+use std::{ io, fs };
 use std::sync::Arc;
+use std::path::PathBuf;
+use std::time::Duration;
 use std::convert::TryFrom;
-use std::net::{ SocketAddr, ToSocketAddrs };
+use std::net::SocketAddr;
 use futures::future::TryFutureExt;
 use tokio::net::TcpStream;
 use tokio_rustls::{ rustls, TlsConnector };
 use hyper::{ header, Uri, Body, Method, Request };
 use hyper::client::conn;
+use trust_dns_resolver::{ TokioAsyncResolver as AsyncResolver, TokioHandle };
+use trust_dns_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
+use directories::ProjectDirs;
 use argh::FromArgs;
+use anyhow::Context;
+use crate::config::Config;
 
 
 /// No SNI checker
@@ -28,19 +35,74 @@ pub struct Options {
 
     /// custom SNI, default empty
     #[argh(option, short = 's')]
-    sni: Option<String>
+    sni: Option<String>,
+
+    /// config path
+    #[argh(option, short = 'c')]
+    config: Option<PathBuf>,
 }
 
 impl Options {
     pub async fn exec(self) -> anyhow::Result<()> {
-        let addr = self.addr
-            .or_else(|| self.target.host()
-                .and_then(|host| (host, self.target.port_u16().unwrap_or(443))
-                    .to_socket_addrs().ok()?
-                    .next()
-                )
-            )
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "not found addr"))?;
+        let resolver = {
+            let config_path = self.config
+                .clone()
+                .or_else(|| {
+                    ProjectDirs::from("", "", env!("CARGO_PKG_NAME"))
+                        .map(|dir| dir.config_dir().join("config.toml"))
+                })
+                .context("missing config")?;
+            let config: Config = toml::from_slice(&fs::read(&config_path)?)?;
+
+            if let Some(ref doh) = config.doh {
+                let mut root_cert_store = rustls::RootCertStore::empty();
+                root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+                    |ta| {
+                        rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                            ta.subject,
+                            ta.spki,
+                            ta.name_constraints,
+                        )
+                    },
+                ));
+                let mut tls_config = rustls::ClientConfig::builder()
+                    .with_safe_defaults()
+                    .with_root_certificates(root_cert_store)
+                    .with_no_client_auth();
+                tls_config.alpn_protocols = vec![b"h2".to_vec()];
+                tls_config.enable_sni = doh.sni;
+                tls_config.enable_early_data = true;
+                let tls_config = Arc::new(tls_config);
+
+                let server = NameServerConfigGroup::from_ips_https(
+                    &[doh.addr.ip()], doh.addr.port(),
+                    doh.name.clone(), false
+                );
+                let mut dns_config = ResolverConfig::from_parts(None, Vec::new(), server);
+                dns_config.set_tls_client_config(tls_config);
+
+                let mut opts = ResolverOpts::default();
+                opts.timeout = Duration::from_secs(2);
+                opts.attempts = 1;
+
+                #[cfg(feature = "dnssec")] {
+                    opts.validate = doh.dnssec;
+                }
+
+                AsyncResolver::new(dns_config, opts, TokioHandle)?
+            } else {
+                AsyncResolver::from_system_conf(TokioHandle)?
+            }
+        };
+
+        let addr = if let Some(addr) = self.addr {
+            addr
+        } else {
+            let host = self.target.host().context("not found host")?;
+            let ips = resolver.lookup_ip(host).await?;
+            let ip = ips.iter().next().context("not found addr")?;
+            (ip, self.target.port_u16().unwrap_or(443)).into()
+        };
         let sni = self.sni
             .as_ref()
             .map(String::as_str)

@@ -2,9 +2,10 @@ mod socks5;
 
 use std::fs;
 use std::time::Duration;
-use std::sync::{ Arc, Mutex };
+use std::sync::Arc;
 use std::path::{ PathBuf, Path };
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 use tokio_rustls::rustls;
 use trust_dns_resolver::{ TokioAsyncResolver as AsyncResolver, TokioHandle };
 use trust_dns_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
