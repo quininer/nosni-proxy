@@ -27,7 +27,6 @@ tower-happy-eyeballs = { git = "https://github.com/quininer/tower-happy-eyeballs
 
 rand = "0.8"
 rcgen = "0.9"
-rustyline = { version = "9", default-features = false }
 
 argh = "0.1"
 serde = { version = "1", features = ["derive"] }

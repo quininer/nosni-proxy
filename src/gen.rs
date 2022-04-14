@@ -1,6 +1,6 @@
 use std::fs;
+use std::io::{ self, BufRead, Write };
 use argh::FromArgs;
-use rustyline::Editor;
 use rand::{ Rng, rngs::OsRng };
 
 
@@ -18,14 +18,29 @@ impl Options {
         let mut rng = OsRng;
         let name = self.name.as_str();
 
-        let mut rl = Editor::<()>::new();
-        let san = rl.readline("subject alt names> ")?
+        let stdin = io::stdin();
+        let mut stdin = stdin.lock();
+        let stdout = io::stdout();
+        let mut stdout = stdout.lock();
+        let mut line = String::new();
+
+        macro_rules! readline {
+            ( $prompt:expr ) => {{
+                line.clear();
+                write!(&mut stdout, $prompt)?;
+                stdout.flush()?;
+                stdin.read_line(&mut line)?;
+                line.as_str()
+            }}
+        }
+
+        let san = readline!("subject alt names> ")
             .split(',')
             .map(str::to_string)
             .map(rcgen::SanType::DnsName)
             .collect::<Vec<_>>();
-        let on = rl.readline("organization name> ")?;
-        let cn = rl.readline("common name> ")?;
+        let on = readline!("organization name> ").to_owned();
+        let cn = readline!("common name> ").to_owned();
 
         let mut params = rcgen::CertificateParams::default();
         params.serial_number = Some(rng.gen());
