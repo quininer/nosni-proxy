@@ -10,7 +10,5 @@ sni = false
 dnssec = true
 
 [mapping]
-"your.domain" = "fake.domain"
-
-[hosts]
-"your.domain" = "127.0.0.1"
+"your.domain" = { sni = "fake.domain", addr = "127.0.0.1" }
+"your2.domain" = { addr = "your3.domain", alpn = [ "http/1.1" ] }
