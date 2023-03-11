@@ -40,6 +40,10 @@ pub struct Options {
     /// config path
     #[argh(option, short = 'c')]
     config: Option<PathBuf>,
+
+    /// force no sni
+    #[argh(switch)]
+    force_no_sni: bool
 }
 
 impl Options {
@@ -125,7 +129,11 @@ impl Options {
             .with_root_certificates(root_cert_store)
             .with_no_client_auth();
         tls_config.alpn_protocols = vec!["h2".into(), "http/1.1".into()];
-        tls_config.enable_sni = self.sni.is_some();
+        tls_config.enable_sni = if self.force_no_sni {
+            false
+        } else {
+            self.sni.is_some()
+        };
 
         let connector = TlsConnector::from(Arc::new(tls_config));
 

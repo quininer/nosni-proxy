@@ -321,7 +321,8 @@ async fn build_tls_connector(proxy: &Proxy, server_name: &str)
     static DEFAULT_RULE: Rule = Rule {
         alpn: Vec::new(),
         sni: None,
-        addr: None
+        addr: None,
+        force_no_sni: false
     };
 
     let rule = proxy.config.mapping.get(server_name).unwrap_or(&DEFAULT_RULE);
@@ -360,7 +361,11 @@ async fn build_tls_connector(proxy: &Proxy, server_name: &str)
             .map(|protocol| Vec::from(protocol.as_bytes()))
             .collect()
     };
-    tls_config.enable_sni = rule.sni.is_some();
+    tls_config.enable_sni = if rule.force_no_sni {
+        false
+    } else {
+        rule.sni.is_some()
+    };
     tls_config.session_storage = REMOTE_SESSION_CACHE.clone();
 
     Ok((TlsConnector::from(Arc::new(tls_config)), dnsname))

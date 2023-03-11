@@ -19,7 +19,9 @@ pub struct Rule {
     #[serde(default)]
     pub alpn: Vec<String>,
     pub sni: Option<String>,
-    pub addr: Option<StrOrList<IpAddr>>
+    pub addr: Option<StrOrList<IpAddr>>,
+    #[serde(default, rename = "force-no-sni")]
+    pub force_no_sni: bool
 }
 
 #[derive(Deserialize)]
