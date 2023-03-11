@@ -18,7 +18,7 @@ webpki-roots = "0.22"
 hyper = { version = "0.14", features = [ "client", "server", "runtime", "http1", "http2" ] }
 tokio = { version = "1", features = [ "full" ] }
 percent-encoding = "2"
-trust-dns-resolver = { version = "0.21", features = [ "dns-over-https-rustls" ] }
+trust-dns-resolver = { version = "0.22", features = [ "dns-over-https-rustls" ] }
 mitmca = { path = "mitmca" }
 
 tower-layer = "0.3"
@@ -26,11 +26,11 @@ tower-util = "0.3"
 tower-happy-eyeballs = { git = "https://github.com/quininer/tower-happy-eyeballs" }
 
 rand = "0.8"
-rcgen = "0.9"
+rcgen = "0.10"
 
 argh = "0.1"
 serde = { version = "1", features = ["derive"] }
-toml = "0.5"
+toml = "0.7"
 directories = "4"
 
 [features]

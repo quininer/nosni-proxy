@@ -59,7 +59,7 @@ impl Proxy {
                 response(&mut stream, 0, addr).await.context("socks5 response")?;
 
                 // local tls handshake
-                let acceptor = rustls::server::Acceptor::new()?;
+                let acceptor = rustls::server::Acceptor::default();
                 let start_handshake = tokio_rustls::LazyConfigAcceptor::new(acceptor, stream)
                     .await
                     .context("local tls accept")?;
@@ -125,7 +125,7 @@ impl Proxy {
                 response(&mut stream, 0, addr).await.context("socks5 response")?;
 
                 // tls handshake
-                let acceptor = rustls::server::Acceptor::new()?;
+                let acceptor = rustls::server::Acceptor::default();
                 let start_handshake = tokio_rustls::LazyConfigAcceptor::new(acceptor, stream)
                     .await
                     .context("local tls accept")?;

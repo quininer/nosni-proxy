@@ -35,7 +35,7 @@ impl Options {
                         .map(|dir| dir.config_dir().join("config.toml"))
                 })
                 .ok_or_else(|| format_err!("missing config"))?;
-            let config: Config = toml::from_slice(&fs::read(&config_path)?)?;
+            let config: Config = toml::from_str(&fs::read_to_string(&config_path)?)?;
 
             let cert_path = config_path
                 .parent()

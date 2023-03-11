@@ -52,7 +52,7 @@ impl Options {
                         .map(|dir| dir.config_dir().join("config.toml"))
                 })
                 .context("missing config")?;
-            let config: Config = toml::from_slice(&fs::read(&config_path)?)?;
+            let config: Config = toml::from_str(&fs::read_to_string(&config_path)?)?;
 
             if let Some(ref doh) = config.doh {
                 let mut root_cert_store = rustls::RootCertStore::empty();
