@@ -59,17 +59,17 @@ impl Options {
             let config: Config = toml::from_str(&fs::read_to_string(&config_path)?)?;
 
             if let Some(ref doh) = config.doh {
-                let mut root_cert_store = rustls::RootCertStore::empty();
+                let mut root_cert_store = tokio_rustls23::rustls::RootCertStore::empty();
                 root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
                     |ta| {
-                        rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                        tokio_rustls23::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
                             ta.subject,
                             ta.spki,
                             ta.name_constraints,
                         )
                     },
                 ));
-                let mut tls_config = rustls::ClientConfig::builder()
+                let mut tls_config = tokio_rustls23::rustls::ClientConfig::builder()
                     .with_safe_defaults()
                     .with_root_certificates(root_cert_store)
                     .with_no_client_auth();

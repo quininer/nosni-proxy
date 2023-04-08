@@ -31,8 +31,8 @@ use crate::config::{ Config, StrOrList, Rule };
 
 static LOCAL_SESSION_CACHE: Lazy<Arc<rustls::server::ServerSessionMemoryCache>> =
     Lazy::new(|| rustls::server::ServerSessionMemoryCache::new(64));
-static REMOTE_SESSION_CACHE: Lazy<Arc<rustls::client::ClientSessionMemoryCache>> =
-    Lazy::new(|| rustls::client::ClientSessionMemoryCache::new(64));
+static REMOTE_SESSION_CACHE: Lazy<rustls::client::Resumption> =
+    Lazy::new(|| rustls::client::Resumption::in_memory_sessions(64));
 static LOCAL_ALPN_CACHE: Lazy<RwLock<HashMap<String, Vec<Vec<u8>>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
@@ -366,7 +366,7 @@ async fn build_tls_connector(proxy: &Proxy, server_name: &str)
     } else {
         rule.sni.is_some()
     };
-    tls_config.session_storage = REMOTE_SESSION_CACHE.clone();
+    tls_config.resumption = REMOTE_SESSION_CACHE.clone();
 
     Ok((TlsConnector::from(Arc::new(tls_config)), dnsname))
 }

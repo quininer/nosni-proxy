@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::path::{ PathBuf, Path };
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use tokio_rustls::rustls;
+use tokio_rustls23::rustls;
 use trust_dns_resolver::{ TokioAsyncResolver as AsyncResolver, TokioHandle };
 use trust_dns_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
 use anyhow::format_err;

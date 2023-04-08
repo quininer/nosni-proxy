@@ -124,8 +124,6 @@ fn test_generic() {
 #[test]
 fn test_mitmca() {
     use std::time::SystemTime;
-    use webpki::{ self, EndEntityCert, Time, TLSServerTrustAnchors };
-    use webpki::trust_anchor_util::cert_der_as_trust_anchor;
 
     let mut params = rcgen::CertificateParams::default();
     params.subject_alt_names.push(rcgen::SanType::DnsName("localhost".into()));
@@ -137,12 +135,12 @@ fn test_mitmca() {
 
     let entry = Entry { entry: ca_cert, der };
     let ca_cert_der = entry.entry.serialize_der().unwrap();
-    let trust_anchor_list = &[cert_der_as_trust_anchor(&ca_cert_der).unwrap()];
-    let trust_anchors = TLSServerTrustAnchors(trust_anchor_list);
+    let trust_anchor_list = &[webpki::TrustAnchor::try_from_cert_der(&ca_cert_der).unwrap()];
+    let trust_anchors = webpki::TlsServerTrustAnchors(trust_anchor_list);
     let rustls::Certificate(cert) = entry.make("localhost.dev").unwrap();
 
-    let end_entity_cert = EndEntityCert::from(&cert).unwrap();
-    let time = Time::try_frm(SystemTime::now()).unwrap();
+    let end_entity_cert = webpki::EndEntityCert::try_from(cert.as_slice()).unwrap();
+    let time = webpki::Time::try_from(SystemTime::now()).unwrap();
     end_entity_cert.verify_is_valid_tls_server_cert(
             &[&webpki::ECDSA_P256_SHA256],
             &trust_anchors,
