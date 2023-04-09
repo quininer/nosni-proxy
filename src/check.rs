@@ -1,4 +1,5 @@
-use std::{ io, fs };
+use std::fs;
+use std::io::{ self, Write };
 use std::sync::Arc;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -8,6 +9,7 @@ use futures::future::TryFutureExt;
 use tokio::net::TcpStream;
 use tokio_rustls::{ rustls, TlsConnector };
 use hyper::{ header, Uri, Body, Method, Request };
+use hyper::body::HttpBody;
 use hyper::client::conn;
 use trust_dns_resolver::{ TokioAsyncResolver as AsyncResolver, TokioHandle };
 use trust_dns_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
@@ -43,7 +45,11 @@ pub struct Options {
 
     /// force no sni
     #[argh(switch)]
-    force_no_sni: bool
+    force_no_sni: bool,
+
+    /// show body
+    #[argh(switch)]
+    show_body: bool
 }
 
 impl Options {
@@ -163,8 +169,20 @@ impl Options {
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
             .await?;
 
-        let (parts, _) = response.into_parts();
+        let (parts, mut body) = response.into_parts();
         println!("parts:\n {:#?}", parts);
+
+        if self.show_body {
+            let stdout = io::stdout();
+            let mut stdout = stdout.lock();
+
+            while let Some(data) = body.data().await {
+                let data = data?;
+                stdout.write_all(&data)?;
+            }
+
+            stdout.flush()?;
+        }
 
         Ok(())
     }
