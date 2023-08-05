@@ -54,7 +54,7 @@ pub struct Options {
 
 impl Options {
     pub async fn exec(self) -> anyhow::Result<()> {
-        let resolver = {
+        let resolver_fut = async {
             let config_path = self.config
                 .clone()
                 .or_else(|| {
@@ -99,15 +99,16 @@ impl Options {
                     opts.validate = doh.dnssec;
                 }
 
-                AsyncResolver::tokio(dns_config, opts)
+                Ok(AsyncResolver::tokio(dns_config, opts)) as anyhow::Result<AsyncResolver>
             } else {
-                AsyncResolver::tokio_from_system_conf()?
+                AsyncResolver::tokio_from_system_conf().map_err(Into::into)
             }
         };
 
         let addr = if let Some(addr) = self.addr {
             addr
         } else {
+            let resolver = resolver_fut.await?;
             let host = self.target.host().context("not found host")?;
             let ips = resolver.lookup_ip(host).await?;
             let ip = ips.iter().next().context("not found addr")?;
