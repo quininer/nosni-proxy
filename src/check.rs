@@ -11,7 +11,7 @@ use tokio_rustls::{ rustls, TlsConnector };
 use hyper::{ header, Uri, Body, Method, Request };
 use hyper::body::HttpBody;
 use hyper::client::conn;
-use trust_dns_resolver::{ TokioAsyncResolver as AsyncResolver, TokioHandle };
+use trust_dns_resolver::TokioAsyncResolver as AsyncResolver;
 use trust_dns_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
 use directories::ProjectDirs;
 use argh::FromArgs;
@@ -65,17 +65,17 @@ impl Options {
             let config: Config = toml::from_str(&fs::read_to_string(&config_path)?)?;
 
             if let Some(ref doh) = config.doh {
-                let mut root_cert_store = tokio_rustls23::rustls::RootCertStore::empty();
-                root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+                let mut root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
+                root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(
                     |ta| {
-                        tokio_rustls23::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                        tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
                             ta.subject,
                             ta.spki,
                             ta.name_constraints,
                         )
                     },
                 ));
-                let mut tls_config = tokio_rustls23::rustls::ClientConfig::builder()
+                let mut tls_config = tokio_rustls::rustls::ClientConfig::builder()
                     .with_safe_defaults()
                     .with_root_certificates(root_cert_store)
                     .with_no_client_auth();
@@ -99,9 +99,9 @@ impl Options {
                     opts.validate = doh.dnssec;
                 }
 
-                AsyncResolver::new(dns_config, opts, TokioHandle)?
+                AsyncResolver::tokio(dns_config, opts)
             } else {
-                AsyncResolver::from_system_conf(TokioHandle)?
+                AsyncResolver::tokio_from_system_conf()?
             }
         };
 
@@ -121,7 +121,7 @@ impl Options {
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid dnsname"))?;
 
         let mut root_cert_store = rustls::RootCertStore::empty();
-        root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+        root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(
             |ta| {
                 rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
                     ta.subject,

@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::path::{ PathBuf, Path };
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use tokio_rustls23::rustls;
-use trust_dns_resolver::{ TokioAsyncResolver as AsyncResolver, TokioHandle };
+use tokio_rustls::rustls;
+use trust_dns_resolver::TokioAsyncResolver as AsyncResolver;
 use trust_dns_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
 use anyhow::format_err;
 use argh::FromArgs;
@@ -49,7 +49,7 @@ impl Options {
 
             let resolver = if let Some(ref doh) = config.doh {
                 let mut root_cert_store = rustls::RootCertStore::empty();
-                root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+                root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(
                     |ta| {
                         rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
                             ta.subject,
@@ -82,9 +82,9 @@ impl Options {
                     opts.validate = doh.dnssec;
                 }
 
-                AsyncResolver::new(dns_config, opts, TokioHandle)?
+                AsyncResolver::tokio(dns_config, opts)
             } else {
-                AsyncResolver::from_system_conf(TokioHandle)?
+                AsyncResolver::tokio_from_system_conf()?
             };
 
             Arc::new(Proxy { ca, resolver, config })

@@ -17,7 +17,7 @@ use tokio::io::{
     AsyncReadExt, AsyncWriteExt
 };
 use tokio_rustls::{ rustls, TlsConnector, client::TlsStream };
-use trust_dns_resolver::{ AsyncResolver, TokioConnection, TokioConnectionProvider };
+use trust_dns_resolver::TokioAsyncResolver;
 
 use futures::future::{ self, FutureExt, TryFutureExt };
 use futures::stream::{ self, StreamExt };
@@ -38,7 +38,7 @@ static LOCAL_ALPN_CACHE: Lazy<RwLock<HashMap<String, Vec<Vec<u8>>>>> =
 
 pub struct Proxy {
     pub ca: Arc<Mutex<CertStore>>,
-    pub resolver: AsyncResolver<TokioConnection, TokioConnectionProvider>,
+    pub resolver: TokioAsyncResolver,
     pub config: Config,
 }
 
@@ -334,7 +334,7 @@ async fn build_tls_connector(proxy: &Proxy, server_name: &str)
     let dnsname = dnsname.to_owned();
 
     let mut root_cert_store = rustls::RootCertStore::empty();
-    root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+    root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(
         |ta| {
             rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
                 ta.subject,

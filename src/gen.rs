@@ -43,7 +43,7 @@ impl Options {
         let cn = readline!("common name> ").to_owned();
 
         let mut params = rcgen::CertificateParams::default();
-        params.serial_number = Some(rng.gen());
+        params.serial_number = Some(rng.gen::<u64>().into());
         params.subject_alt_names = san;
         params.distinguished_name.push(rcgen::DnType::OrganizationName, on);
         params.distinguished_name.push(rcgen::DnType::CommonName, cn);
