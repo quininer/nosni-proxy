@@ -18,7 +18,7 @@ webpki-roots = "0.25"
 hyper = { version = "0.14", features = [ "client", "server", "runtime", "http1", "http2" ] }
 tokio = { version = "1", features = [ "full" ] }
 percent-encoding = "2"
-trust-dns-resolver = { version = "0.23.0-alpha.5", features = [ "dns-over-https-rustls" ] }
+trust-dns-resolver = { version = "0.23.0", features = [ "dns-over-https-rustls" ] }
 mitmca = { path = "mitmca" }
 
 tower-layer = "0.3"
