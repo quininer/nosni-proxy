@@ -10,7 +10,7 @@ psl = "2"
 cache_2q = "0.10"
 rand = "0.8"
 rustls = "0.21"
-rcgen = { version = "0.9", features = [ "x509-parser" ] }
+rcgen = { version = "0.11", features = [ "x509-parser" ] }
 time = "0.3"
 
 [dev-dependencies]

@@ -76,7 +76,7 @@ impl Entry {
 
         let mut params = rcgen::CertificateParams::default();
         params.subject_alt_names.push(rcgen::SanType::DnsName(cn.into()));
-        params.serial_number = Some(rand::random());
+        params.serial_number = Some(rand::random::<u64>().into());
         params.distinguished_name.push(rcgen::DnType::OrganizationName, "MITM CA");
         params.distinguished_name.push(rcgen::DnType::CommonName, cn);
         params.key_pair = Some(kp);

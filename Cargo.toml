@@ -7,7 +7,7 @@ description = "No SNI"
 license = "CC0-1.0"
 
 [workspace]
-members = [ "mitmca", "hook" ]
+members = [ "mitmca" ]
 
 [dependencies]
 once_cell = "1"
@@ -30,7 +30,7 @@ rcgen = "0.11"
 
 argh = "0.1"
 serde = { version = "1", features = ["derive"] }
-toml = "0.7"
+toml = "0.8"
 directories = "5"
 
 [features]
