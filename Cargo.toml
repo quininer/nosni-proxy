@@ -13,9 +13,9 @@ members = [ "mitmca", "hook" ]
 once_cell = "1"
 anyhow = "1"
 futures = "0.3"
-#tokio-rustls-024 = { package = "tokio-rustls", version = "0.24" }
-tokio-rustls = "0.24"
-webpki-roots = "0.25"
+tokio-rustls24 = { package = "tokio-rustls", version = "0.24" }
+tokio-rustls = "0.26"
+webpki-roots = "0.26"
 tokio = { version = "1", features = [ "full" ] }
 hyper = { version = "1", features = [ "client", "server", "http1", "http2" ] }
 hyper-util = { version = "0.1", features = [ "tokio", "server", "http1", "http2" ] }
@@ -29,7 +29,7 @@ tower-util = "0.3"
 tower-happy-eyeballs = { git = "https://github.com/quininer/tower-happy-eyeballs" }
 
 rand = "0.8"
-rcgen = "0.11"
+rcgen = "0.13"
 
 argh = "0.1"
 serde = { version = "1", features = ["derive"] }
