@@ -14,4 +14,4 @@ rcgen = { version = "0.11", features = [ "x509-parser" ] }
 time = "0.3"
 
 [dev-dependencies]
-webpki = { package = "rustls-webpki", version = "0.100" }
+webpki = { package = "rustls-webpki", version = "0.102" }

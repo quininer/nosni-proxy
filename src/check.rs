@@ -8,9 +8,10 @@ use std::net::SocketAddr;
 use futures::future::TryFutureExt;
 use tokio::net::TcpStream;
 use tokio_rustls::{ rustls, TlsConnector };
-use hyper::{ header, Uri, Body, Method, Request };
-use hyper::body::HttpBody;
+use hyper::{ header, Uri, Method, Request };
 use hyper::client::conn;
+use hyper_util::rt::{ TokioExecutor, TokioIo };
+use http_body_util::BodyExt;
 use trust_dns_resolver::TokioAsyncResolver as AsyncResolver;
 use trust_dns_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
 use directories::ProjectDirs;
@@ -144,7 +145,7 @@ impl Options {
 
         let connector = TlsConnector::from(Arc::new(tls_config));
 
-        let mut request = Request::new(Body::empty());
+        let mut request = Request::new(String::new());
         *request.method_mut() = Method::GET;
         *request.uri_mut() = self.target.clone();
         if let Some(ua) = self.user_agent.clone() {
@@ -154,15 +155,12 @@ impl Options {
 
         let stream = TcpStream::connect(&addr).await?;
         let stream = connector.connect(sni, stream).await?;
+        let stream = TokioIo::new(stream);
 
-        let mut builder = conn::Builder::new();
-        let (_, session) = stream.get_ref();
-        if let Some(b"h2") = session.alpn_protocol() {
-            builder.http2_only(true);
-        }
-        let (mut sender, conn) = builder.handshake::<_, Body>(stream)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
-            .await?;
+        let builder = conn::http2::Builder::new(TokioExecutor::new());
+        let (mut sender, conn) = builder.handshake::<_, String>(stream)
+            .await
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
         tokio::spawn(conn.map_err(|err| eprintln!("conn error: {:?}", err)));
 
@@ -177,9 +175,11 @@ impl Options {
             let stdout = io::stdout();
             let mut stdout = stdout.lock();
 
-            while let Some(data) = body.data().await {
+            while let Some(data) = body.frame().await {
                 let data = data?;
-                stdout.write_all(&data)?;
+                if let Some(data) = data.data_ref() {
+                    stdout.write_all(data)?;
+                }
             }
 
             stdout.flush()?;

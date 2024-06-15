@@ -5,11 +5,6 @@ mod check;
 
 use argh::FromArgs;
 
-#[cfg(feature = "mimallocator")]
-#[global_allocator]
-static GLOBAL: mimallocator::Mimalloc = mimallocator::Mimalloc;
-
-
 /// No SNI tools
 #[derive(FromArgs)]
 struct Options {
