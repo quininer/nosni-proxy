@@ -17,7 +17,7 @@ use tokio::io::{
     AsyncReadExt, AsyncWriteExt
 };
 use tokio_rustls::{ rustls, TlsConnector, client::TlsStream };
-use trust_dns_resolver::TokioAsyncResolver;
+use hickory_resolver::TokioAsyncResolver;
 
 use futures::future::{ self, FutureExt, TryFutureExt };
 use futures::stream::{ self, StreamExt };
