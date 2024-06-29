@@ -1,3 +1,4 @@
+mod util;
 mod config;
 mod proxy;
 mod gen;

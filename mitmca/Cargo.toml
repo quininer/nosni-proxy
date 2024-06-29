@@ -9,10 +9,10 @@ thiserror = "1"
 psl = "2"
 cache_2q = "0.10"
 rand = "0.8"
-rustls = "0.23"
+rustls = { workspace = true }
 pem = "3"
 rcgen = { workspace = true, features = [ "x509-parser" ] }
 time = "0.3"
 
 [dev-dependencies]
-webpki = { package = "rustls-webpki", version = "0.102" }
+webpki = { package = "rustls-webpki", version = "0.102", default-features = false, features = [ "ring" ] }

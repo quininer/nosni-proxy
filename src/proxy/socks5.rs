@@ -27,6 +27,7 @@ use tower_happy_eyeballs::HappyEyeballsLayer;
 
 use mitmca::CertStore;
 use crate::config::{ Config, StrOrList, Rule };
+use crate::util::{ ZlibDecompressor, ZstdDecompressor };
 
 
 static LOCAL_SESSION_CACHE: Lazy<Arc<rustls::server::ServerSessionMemoryCache>> =
@@ -358,6 +359,7 @@ async fn build_tls_connector(proxy: &Proxy, server_name: &str)
         rule.sni.is_some()
     };
     tls_config.resumption = REMOTE_SESSION_CACHE.clone();
+    tls_config.cert_decompressors = vec![&ZlibDecompressor, &ZstdDecompressor];
 
     Ok((TlsConnector::from(Arc::new(tls_config)), dnsname))
 }
