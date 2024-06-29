@@ -1,6 +1,6 @@
 mod config;
-mod proxy;
-mod gen;
+//mod proxy;
+//mod gen;
 mod check;
 
 use argh::FromArgs;
@@ -15,9 +15,9 @@ struct Options {
 #[derive(FromArgs)]
 #[argh(subcommand)]
 enum SubCommands {
-    Proxy(proxy::Options),
+    //Proxy(proxy::Options),
     Check(check::Options),
-    Gen(gen::Options),
+    //Gen(gen::Options),
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -25,9 +25,9 @@ async fn main() -> anyhow::Result<()> {
     let options: Options = argh::from_env();
 
     match options.subcmd {
-        SubCommands::Proxy(cmd) => cmd.exec().await?,
+        //SubCommands::Proxy(cmd) => cmd.exec().await?,
         SubCommands::Check(cmd) => cmd.exec().await?,
-        SubCommands::Gen(cmd) => cmd.exec()?
+        //SubCommands::Gen(cmd) => cmd.exec()?
     }
 
     Ok(())
