@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::path::{ PathBuf, Path };
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use tokio_rustls::rustls;
 use hickory_resolver::TokioAsyncResolver as AsyncResolver;
 use hickory_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
 use anyhow::format_err;
@@ -48,13 +47,15 @@ impl Options {
             let ca = Arc::new(Mutex::new(read_root_cert(&cert_path, &key_path)?));
 
             let resolver = if let Some(ref doh) = config.doh {
+                use tokio_rustls24::rustls;
+
                 let mut root_cert_store = rustls::RootCertStore::empty();
                 root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(
                     |ta| {
                         rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                            ta.subject,
-                            ta.spki,
-                            ta.name_constraints,
+                            ta.subject.as_ref(),
+                            ta.subject_public_key_info.as_ref(),
+                            ta.name_constraints.as_deref(),
                         )
                     },
                 ));

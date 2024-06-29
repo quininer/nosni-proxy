@@ -316,7 +316,7 @@ where
 }
 
 async fn build_tls_connector(proxy: &Proxy, server_name: &str)
-    -> anyhow::Result<(TlsConnector, rustls::ServerName)>
+    -> anyhow::Result<(TlsConnector, rustls::pki_types::ServerName<'static>)>
 {
     static DEFAULT_RULE: Rule = Rule {
         alpn: Vec::new(),
@@ -329,22 +329,13 @@ async fn build_tls_connector(proxy: &Proxy, server_name: &str)
     let dnsname = rule.sni
         .as_deref()
         .unwrap_or(server_name);
-    let dnsname = rustls::ServerName::try_from(dnsname)
+    let dnsname = rustls::pki_types::ServerName::try_from(dnsname)
         .map_err(|_| anyhow::format_err!("bad dnsname: {:?}", dnsname))?;
     let dnsname = dnsname.to_owned();
 
     let mut root_cert_store = rustls::RootCertStore::empty();
-    root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(
-        |ta| {
-            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                ta.subject,
-                ta.spki,
-                ta.name_constraints,
-            )
-        },
-    ));
+    root_cert_store.roots = webpki_roots::TLS_SERVER_ROOTS.into();
     let mut tls_config = rustls::ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(root_cert_store)
         .with_no_client_auth();
     tls_config.alpn_protocols = if rule.alpn.is_empty() {
