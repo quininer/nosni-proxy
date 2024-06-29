@@ -2,7 +2,7 @@
 name = "mitmca"
 version = "0.1.0"
 authors = ["quininer <quininer@live.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 thiserror = "1"
@@ -10,7 +10,8 @@ psl = "2"
 cache_2q = "0.10"
 rand = "0.8"
 rustls = "0.23"
-rcgen = { version = "0.13", features = [ "x509-parser" ] }
+pem = "3"
+rcgen = { workspace = true, features = [ "x509-parser" ] }
 time = "0.3"
 
 [dev-dependencies]

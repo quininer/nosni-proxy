@@ -2,12 +2,15 @@
 name = "nosni-proxy"
 version = "0.3.3"
 authors = ["quininer <quininer@live.com>"]
-edition = "2018"
+edition = "2021"
 description = "No SNI"
 license = "CC0-1.0"
 
 [workspace]
 members = [ "mitmca", "hook" ]
+
+[workspace.dependencies]
+rcgen = { git = "https://github.com/quininer/rcgen", branch = "signbyparams" }
 
 [dependencies]
 once_cell = "1"
@@ -29,7 +32,7 @@ tower-util = "0.3"
 tower-happy-eyeballs = { git = "https://github.com/quininer/tower-happy-eyeballs" }
 
 rand = "0.8"
-rcgen = "0.13"
+rcgen = { workspace = true }
 
 argh = "0.1"
 serde = { version = "1", features = ["derive"] }

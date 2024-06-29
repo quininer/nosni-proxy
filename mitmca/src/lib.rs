@@ -1,29 +1,32 @@
 use std::convert::TryFrom;
 use std::borrow::Cow;
 use thiserror::Error;
-use rcgen::RcgenError;
 use time::{ OffsetDateTime, Duration };
 use psl::{ Psl, List };
 use cache_2q::Cache;
 
 
 pub struct Entry {
-    entry: rcgen::Certificate,
-    der: Vec<u8>
+    kp: rcgen::KeyPair,
+    params: rcgen::CertificateParams,
+    skder: rustls::pki_types::PrivateKeyDer<'static>
 }
 
 pub struct CertStore {
     pub entry: Entry,
-    cache: Cache<String, rustls::Certificate>
+    cache: Cache<String, rustls::pki_types::CertificateDer<'static>>
 }
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("pem parse error: {0}")]
+    Pem(#[from] pem::PemError),
+
     #[error("rcgen error: {0}")]
-    Rcgen(#[from] RcgenError),
+    Rcgen(#[from] rcgen::Error),
 
     #[error("load certs failed")]
-    LoadCerts,
+    LoadCerts(&'static str),
 
     #[error("rustls error: {0}")]
     Rustls(#[from] rustls::Error)
@@ -43,9 +46,8 @@ impl CertStore {
         };
 
         let config = rustls::ServerConfig::builder()
-            .with_safe_defaults()
             .with_no_client_auth()
-            .with_single_cert(vec![cert], rustls::PrivateKey(entry.der.clone()))?;
+            .with_single_cert(vec![cert], entry.skder.clone_key())?;
         Ok(config)
     }
 }
@@ -58,37 +60,33 @@ impl From<Entry> for CertStore {
 
 impl Entry {
     pub fn from_pem(cert_input: &str, key_input: &str) -> Result<Entry, Error> {
-        let kp = rcgen::KeyPair::from_pem(key_input)?;
-        let params = rcgen::CertificateParams::from_ca_cert_pem(cert_input, kp)?;
-        let entry = rcgen::Certificate::from_params(params)?;
-        let der = entry.serialize_private_key_der();
-        Ok(Entry { entry, der })
+        let key_input = pem::parse(key_input)?;
+        let skder = <rustls::pki_types::PrivateKeyDer<'_>>::try_from(key_input.contents())
+            .map_err(Error::LoadCerts)?
+            .clone_key();
+        let kp = rcgen::KeyPair::try_from(&skder)?;
+        let params = rcgen::CertificateParams::from_ca_cert_pem(cert_input)?;
+        Ok(Entry { kp, params, skder })
     }
 
-    pub fn make(&self, cn: &str) -> Result<rustls::Certificate, Error> {
-        let Entry { entry, der } = self;
-
+    pub fn make(&self, cn: &str) -> Result<rustls::pki_types::CertificateDer<'static>, Error> {
         thread_local!{
             static TODAY: OffsetDateTime = OffsetDateTime::now_utc();
         }
 
-        let kp = rcgen::KeyPair::try_from(der.as_slice())?;
-
         let mut params = rcgen::CertificateParams::default();
-        params.subject_alt_names.push(rcgen::SanType::DnsName(cn.into()));
+        params.subject_alt_names.push(rcgen::SanType::DnsName(cn.parse()?));
         params.serial_number = Some(rand::random::<u64>().into());
         params.distinguished_name.push(rcgen::DnType::OrganizationName, "MITM CA");
         params.distinguished_name.push(rcgen::DnType::CommonName, cn);
-        params.key_pair = Some(kp);
         TODAY.with(|today| {
             params.not_before = *today - Duration::days(1);
             params.not_after = *today + Duration::weeks(1);
         });
 
-        let der = rcgen::Certificate::from_params(params)?
-            .serialize_der_with_signer(entry)?;
+        let cert = params.signed_by2(&self.kp, &self.params, &self.kp)?;
 
-        Ok(rustls::Certificate(der))
+        Ok(cert.into())
     }
 }
 
@@ -123,28 +121,30 @@ fn test_generic() {
 
 #[test]
 fn test_mitmca() {
-    use std::time::SystemTime;
-
+    let kp = rcgen::KeyPair::generate().unwrap();
     let mut params = rcgen::CertificateParams::default();
-    params.subject_alt_names.push(rcgen::SanType::DnsName("localhost".into()));
+    params.subject_alt_names.push(rcgen::SanType::DnsName("localhost".parse().unwrap()));
     params.distinguished_name.push(rcgen::DnType::OrganizationName, "MITM CA");
     params.distinguished_name.push(rcgen::DnType::CommonName, "MITM CA");
     params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-    let ca_cert = rcgen::Certificate::from_params(params).unwrap();
-    let der = ca_cert.serialize_private_key_der();
+    let ca_cert = params.clone().self_signed(&kp).unwrap();
+    let skder = rustls::pki_types::PrivateKeyDer::try_from(kp.serialized_der()).unwrap();
+    let skder = skder.clone_key();
 
-    let entry = Entry { entry: ca_cert, der };
-    let ca_cert_der = entry.entry.serialize_der().unwrap();
-    let trust_anchor_list = &[webpki::TrustAnchor::try_from_cert_der(&ca_cert_der).unwrap()];
-    let trust_anchors = webpki::TlsServerTrustAnchors(trust_anchor_list);
-    let rustls::Certificate(cert) = entry.make("localhost.dev").unwrap();
+    let entry = Entry { kp, params, skder };
 
-    let end_entity_cert = webpki::EndEntityCert::try_from(cert.as_slice()).unwrap();
-    let time = webpki::Time::try_from(SystemTime::now()).unwrap();
-    end_entity_cert.verify_is_valid_tls_server_cert(
-            &[&webpki::ECDSA_P256_SHA256],
-            &trust_anchors,
-            &[&ca_cert_der],
-            time,
-    ).expect("valid TLS server cert");
+    let ca_cert_der = ca_cert.der();
+    let trust_anchor = webpki::anchor_from_trusted_cert(ca_cert_der).unwrap();
+    let cert = entry.make("localhost.dev").unwrap();
+
+    let end_entity_cert = webpki::EndEntityCert::try_from(&cert).unwrap();
+    end_entity_cert.verify_for_usage(
+        webpki::ALL_VERIFICATION_ALGS,
+        &[trust_anchor],
+        &[],
+        rustls::pki_types::UnixTime::now(),
+        webpki::KeyUsage::server_auth(),
+        None,
+        None
+    ).unwrap();
 }
