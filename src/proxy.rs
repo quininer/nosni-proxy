@@ -1,5 +1,6 @@
-//mod socks5;
+mod socks5;
 mod mitm;
+mod fragment;
 
 use std::fs;
 use std::time::Duration;
@@ -102,8 +103,26 @@ impl Options {
                     .join(&config.key);
                 let ca = Arc::new(Mutex::new(read_root_cert(&cert_path, &key_path)?));
 
-                Arc::new(mitm::Proxy { ca, shared: shared.clone() })
+                mitm::Proxy { ca, shared: shared.clone() }
             };
+            let listener = TcpListener::bind(config.bind).await?;
+
+            joinset.spawn(async move {
+                loop {
+                    let (stream, _) = listener.accept().await?;
+                    let req_id: u64 = rand::random();
+                    let proxy = proxy.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = proxy.call(req_id, stream).await {
+                            eprintln!("[{:x}] proxy connect error: {:?}", req_id, err)
+                        }
+                    });
+                }
+            });
+        }
+
+        if let Some(config) = shared.config.fragment.as_ref() {
+            let proxy = fragment::Proxy { size: config.size.clone(), shared: shared.clone() };
             let listener = TcpListener::bind(config.bind).await?;
 
             joinset.spawn(async move {

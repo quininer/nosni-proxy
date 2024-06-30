@@ -14,7 +14,8 @@ pub struct Config {
 
 #[derive(Deserialize)]
 pub struct Fragment {
-    pub bind: SocketAddr
+    pub bind: SocketAddr,
+    pub size: (u16, u16),
 }
 
 #[derive(Deserialize)]

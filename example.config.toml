@@ -1,7 +1,12 @@
+[mitm]
 bind = "127.0.0.1:1087"
 alpn = "h2, http%2F1.1"
 cert = "./ca-cert.pem"
 key = "./ca.pem"
+
+[fragment]
+bind = "127.0.0.1:1077"
+size = [50, 120]
 
 [doh]
 addr = "127.0.0.1:443"
