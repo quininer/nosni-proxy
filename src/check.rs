@@ -18,7 +18,6 @@ use directories::ProjectDirs;
 use argh::FromArgs;
 use anyhow::Context;
 use crate::config::Config;
-use crate::util::FragmentStream;
 
 
 /// No SNI checker
@@ -44,10 +43,6 @@ pub struct Options {
     /// config path
     #[argh(option, short = 'c')]
     config: Option<PathBuf>,
-
-    /// tls hello fragment
-    #[argh(option, short = 'f')]
-    fragment: Option<String>,
 
     /// force no sni
     #[argh(switch)]
@@ -129,14 +124,6 @@ impl Options {
             .and_then(|host| rustls::pki_types::ServerName::try_from(host).ok())
             .map(|host| host.to_owned())
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid dnsname"))?;
-        let fragment_range = if let Some(s) = self.fragment.as_ref() {
-            let (start, end) = s.split_once("..=").context("bad range")?;
-            let start: u16 = start.parse()?;
-            let end: u16 = end.parse()?;
-            Some((start, end))
-        } else {
-            None
-        };
 
         let mut root_cert_store = rustls::RootCertStore::empty();
         root_cert_store.roots = webpki_roots::TLS_SERVER_ROOTS.into();
@@ -161,7 +148,6 @@ impl Options {
         }
 
         let stream = TcpStream::connect(&addr).await?;
-        let stream = FragmentStream::new(stream).set_fragment(fragment_fn(fragment_range));
         let stream = connector.connect(sni, stream).await?;
         let stream = TokioIo::new(stream);
 
@@ -195,22 +181,4 @@ impl Options {
 
         Ok(())
     }
-}
-
-fn fragment_fn(range: Option<(u16, u16)>) -> Option<Box<dyn Fn(u16) -> (u16, Duration) + Send + Sync>> {
-    use rand::Rng;
-
-    let range = range?;
-
-    Some(Box::new(move |len| {
-        let mut rng = rand::thread_rng();
-
-        let start = std::cmp::min(len, range.0);
-        let end = std::cmp::min(len, range.1);
-
-        let len = rng.gen_range(start..=end);
-        let dur = Duration::from_millis(rng.gen_range(100..=100));
-
-        (len, dur)
-    }))
 }
