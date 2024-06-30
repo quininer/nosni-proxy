@@ -18,6 +18,7 @@ use directories::ProjectDirs;
 use argh::FromArgs;
 use anyhow::Context;
 use crate::config::Config;
+use crate::util::FragmentStream;
 
 
 /// No SNI checker
@@ -148,6 +149,7 @@ impl Options {
         }
 
         let stream = TcpStream::connect(&addr).await?;
+        let stream = FragmentStream::new(stream);
         let stream = connector.connect(sni, stream).await?;
         let stream = TokioIo::new(stream);
 
