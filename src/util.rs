@@ -3,7 +3,6 @@ use std::pin::Pin;
 use std::marker::Unpin;
 use std::future::Future;
 use std::time::Duration;
-use std::num::NonZeroUsize;
 use std::task::{ ready, Context, Poll };
 use tokio::time::{ sleep, Sleep, Instant };
 use tokio::io::{ AsyncRead, AsyncWrite, ReadBuf };
@@ -53,10 +52,11 @@ impl CertDecompressor for ZstdDecompressor {
     }
 }
 
+pub type FragmentFn = Box<dyn Fn(u16) -> (u16, Duration) + Send + Sync>;
+
 pub struct FragmentStream<Stream> {
     stream: Stream,
-    fragment_size: NonZeroUsize,
-    duration: Option<Duration>,
+    fragment: Option<FragmentFn>,
     state: State
 }
 
@@ -76,6 +76,7 @@ enum State {
         need_flush: bool,
         header: Buffer<[u8; 5]>,
         buf: Buffer<Box<[u8]>>,
+        chunk_len: u16
     },
     Fallback(Buffer<[u8; 5]>),
     Done
@@ -100,12 +101,6 @@ impl<B> Buffer<B> {
 }
 
 impl<B: AsRef<[u8]>> Buffer<B> {
-    fn fragment(&self, n: NonZeroUsize) -> io::Result<u16> {
-        std::cmp::min(self.remaining(), n.get())
-            .try_into()
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "bad hello size"))
-    }
-
     fn unread_ref(&self) -> &[u8] {
         &self.buf.as_ref()[self.pos..]
     }
@@ -129,22 +124,19 @@ impl<Stream> FragmentStream<Stream> {
     pub fn new(stream: Stream) -> Self {
         FragmentStream {
             stream,
-            fragment_size: NonZeroUsize::new(77).unwrap(),
-            duration: Some(Duration::from_millis(100)),
-            state: State::Start(Buffer::new([0; 5]))
+            fragment: None,
+            state: State::Done
         }
     }
 
-    pub fn set_fragment_size(&mut self, fragment_size: NonZeroUsize) {
-        self.fragment_size = fragment_size;
-    }
-
-    pub fn set_time(&mut self, dur: Duration) {
-        self.duration = Some(dur);
-    }
-
-    pub fn disable(&mut self) {
-        self.state = State::Done;
+    pub fn set_fragment(mut self, fragment_fn: Option<FragmentFn>) -> Self {
+        self.fragment = fragment_fn;
+        self.state = if self.fragment.is_some() {
+            State::Start(Buffer::new([0; 5]))
+        } else {
+            State::Done
+        };
+        self
     }
 }
 
@@ -201,16 +193,21 @@ impl<Stream: AsyncWrite + Unpin> AsyncWrite for FragmentStream<Stream> {
 
                 if buf.remaining() == 0 {
                     buf.reset();
-                    let len = buf.fragment(this.fragment_size)?.to_be_bytes();
+
+                    let buf_len = buf.remaining().try_into().map_err(|_| bad_length())?;
+                    let fragment = this.fragment.as_ref().unwrap();
+                    let (len, dur) = fragment(buf_len);
+                    let lenbuf = len.to_be_bytes();
                     let mut header = *header;
-                    header[3] = len[0];
-                    header[4] = len[1];
+                    header[3] = lenbuf[0];
+                    header[4] = lenbuf[1];
 
                     this.state = State::WriteHello {
                         need_flush: false,
-                        sleep: Box::pin(sleep(Duration::from_secs(0))),
+                        sleep: Box::pin(sleep(dur)),
                         header: Buffer::new(header),
-                        buf: Buffer::new(mem::take(buf.get_mut()))
+                        buf: Buffer::new(mem::take(buf.get_mut())),
+                        chunk_len: len
                     };
                 }
 
@@ -218,36 +215,39 @@ impl<Stream: AsyncWrite + Unpin> AsyncWrite for FragmentStream<Stream> {
 
                 Poll::Pending
             },
-            State::WriteHello { sleep, need_flush, header, buf } => {
+            State::WriteHello { sleep, need_flush, header, buf, chunk_len } => {
                 if *need_flush {
                     ready!(Pin::new(&mut this.stream).poll_flush(cx))?;
                     *need_flush = false;
 
-                    let len = buf.fragment(this.fragment_size)?.to_be_bytes();
+                    let buf_len = buf.remaining().try_into().map_err(|_| bad_length())?;
+                    let fragment = this.fragment.as_ref().unwrap();
+                    let (len, dur) = fragment(buf_len);
+                    let lenbuf = len.to_be_bytes();
                     header.reset();
                     let header = header.unfill_mut();
-                    header[3] = len[0];
-                    header[4] = len[1];
+                    header[3] = lenbuf[0];
+                    header[4] = lenbuf[1];
+                    *chunk_len = len;
+
+                    sleep.as_mut().reset(Instant::now() + dur);
                 }
 
                 ready!(sleep.as_mut().poll(cx));
 
                 while header.remaining() > 0 {
                     let n = ready!(Pin::new(&mut this.stream).poll_write(cx, header.unread_ref()))?;
-                    dbg!(header.unread_ref(), n);
                     header.advance(n);
                 }
 
-                let len = std::cmp::min(buf.remaining(), this.fragment_size.get());
+                let len = std::cmp::min(buf.remaining(), (*chunk_len).into());
                 let n = ready!(Pin::new(&mut this.stream).poll_write(cx, &buf.unread_ref()[..len]))?;
                 buf.advance(n);
+                *chunk_len -= u16::try_from(n).map_err(|_| bad_length())?;
 
                 if buf.remaining() == 0 {
                     this.state = State::Done;
                 } else {
-                    if let Some(dur) = this.duration.as_ref() {
-                        sleep.as_mut().reset(Instant::now() + *dur);
-                    }
                     *need_flush = true;
                 }
 
@@ -281,18 +281,29 @@ impl<Stream: AsyncWrite + Unpin> AsyncWrite for FragmentStream<Stream> {
         Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
     }
 
-    /*
     fn poll_write_vectored(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
-        Pin::new(&mut this.stream).poll_write_vectored(cx, bufs)
+
+        if this.fragment.is_none() || matches!(this.state, State::Done) {
+            Pin::new(&mut this.stream).poll_write_vectored(cx, bufs)
+        } else {
+            let mut n = 0;
+            for buf in bufs {
+                n += ready!(Pin::new(&mut *this).poll_write(cx, buf))?;
+            }
+            Poll::Ready(Ok(n))
+        }
     }
-    */
 
     fn is_write_vectored(&self) -> bool {
         matches!(self.state, State::Done)
     }
+}
+
+pub fn bad_length() -> io::Error {
+    io::Error::new(io::ErrorKind::Other, "bad length")
 }
