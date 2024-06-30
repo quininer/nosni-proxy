@@ -6,12 +6,23 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct Config {
+    pub mitm: Option<Mitm>,
+    pub fragment: Option<Fragment>,
+    pub doh: Option<Doh>,
+    pub mapping: HashMap<String, Rule>,
+}
+
+#[derive(Deserialize)]
+pub struct Fragment {
+    pub bind: SocketAddr
+}
+
+#[derive(Deserialize)]
+pub struct Mitm {
     pub bind: SocketAddr,
     pub alpn: Vec<String>,
     pub cert: PathBuf,
     pub key: PathBuf,
-    pub doh: Option<Doh>,
-    pub mapping: HashMap<String, Rule>,
 }
 
 #[derive(Deserialize)]
@@ -21,7 +32,7 @@ pub struct Rule {
     pub sni: Option<String>,
     pub addr: Option<StrOrList<IpAddr>>,
     #[serde(default, rename = "force-no-sni")]
-    pub force_no_sni: bool
+    pub force_no_sni: bool,
 }
 
 #[derive(Deserialize)]

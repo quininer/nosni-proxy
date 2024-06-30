@@ -1,10 +1,12 @@
-mod socks5;
+//mod socks5;
+mod mitm;
 
 use std::fs;
 use std::time::Duration;
 use std::sync::Arc;
 use std::path::{ PathBuf, Path };
 use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 use tokio::sync::Mutex;
 use hickory_resolver::TokioAsyncResolver as AsyncResolver;
 use hickory_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
@@ -12,7 +14,6 @@ use anyhow::format_err;
 use argh::FromArgs;
 use directories::ProjectDirs;
 use mitmca::{ Entry, CertStore };
-use socks5::Proxy;
 use crate::config::Config;
 
 
@@ -25,26 +26,22 @@ pub struct Options {
     config: Option<PathBuf>,
 }
 
+struct Shared {
+    config: Config,
+    resolver: AsyncResolver,
+}
+
 impl Options {
     pub async fn exec(self) -> anyhow::Result<()> {
-        let proxy = {
-            let config_path = self.config
-                .or_else(|| {
-                    ProjectDirs::from("", "", env!("CARGO_PKG_NAME"))
-                        .map(|dir| dir.config_dir().join("config.toml"))
-                })
-                .ok_or_else(|| format_err!("missing config"))?;
-            let config: Config = toml::from_str(&fs::read_to_string(&config_path)?)?;
+        let config_path = self.config
+            .or_else(|| {
+                ProjectDirs::from("", "", env!("CARGO_PKG_NAME"))
+                    .map(|dir| dir.config_dir().join("config.toml"))
+            })
+            .ok_or_else(|| format_err!("missing config"))?;
 
-            let cert_path = config_path
-                .parent()
-                .unwrap_or(&config_path)
-                .join(&config.cert);
-            let key_path = config_path
-                .parent()
-                .unwrap_or(&config_path)
-                .join(&config.key);
-            let ca = Arc::new(Mutex::new(read_root_cert(&cert_path, &key_path)?));
+        let shared = {
+            let config: Config = toml::from_str(&fs::read_to_string(&config_path)?)?;
 
             let resolver = if let Some(ref doh) = config.doh {
                 use tokio_rustls24::rustls;
@@ -88,23 +85,46 @@ impl Options {
                 AsyncResolver::tokio_from_system_conf()?
             };
 
-            Arc::new(Proxy { ca, resolver, config })
+            Arc::new(Shared { config, resolver })
         };
 
-        let listener = TcpListener::bind(proxy.config.bind).await?;
+        let mut joinset: JoinSet<anyhow::Result<()>> = JoinSet::new();
 
-        loop {
-            let (stream, _) = listener.accept().await?;
+        if let Some(config) = shared.config.mitm.as_ref() {
+            let proxy = {
+                let cert_path = config_path
+                    .parent()
+                    .unwrap_or(&config_path)
+                    .join(&config.cert);
+                let key_path = config_path
+                    .parent()
+                    .unwrap_or(&config_path)
+                    .join(&config.key);
+                let ca = Arc::new(Mutex::new(read_root_cert(&cert_path, &key_path)?));
 
-            let req_id: u64 = rand::random();
+                Arc::new(mitm::Proxy { ca, shared: shared.clone() })
+            };
+            let listener = TcpListener::bind(config.bind).await?;
 
-            let proxy = proxy.clone();
-            tokio::spawn(async move {
-                if let Err(err) = proxy.call(req_id, stream).await {
-                    eprintln!("[{:x}] proxy connect error: {:?}", req_id, err)
+            joinset.spawn(async move {
+                loop {
+                    let (stream, _) = listener.accept().await?;
+                    let req_id: u64 = rand::random();
+                    let proxy = proxy.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = proxy.call(req_id, stream).await {
+                            eprintln!("[{:x}] proxy connect error: {:?}", req_id, err)
+                        }
+                    });
                 }
             });
         }
+
+        while let Some(result) = joinset.join_next().await {
+            let () = result??;
+        }
+
+        Ok(())
     }
 }
 
