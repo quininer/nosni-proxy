@@ -1,4 +1,3 @@
-use std::time::Duration;
 use tokio_rustls::rustls::compress::{ CertDecompressor, DecompressionFailed };
 use tokio_rustls::rustls::CertificateCompressionAlgorithm;
 
@@ -43,18 +42,4 @@ impl CertDecompressor for ZstdDecompressor {
     fn algorithm(&self) -> CertificateCompressionAlgorithm {
         CertificateCompressionAlgorithm::Zstd
     }
-}
-
-pub fn fragment(len: u16, range: (u16, u16)) -> (u16, Duration) {
-    use rand::Rng;
-
-    let mut rng = rand::thread_rng();
-
-    let start = std::cmp::min(len, range.0);
-    let end = std::cmp::min(len, range.1);
-
-    let len = rng.gen_range(start..=end);
-    let dur = Duration::from_millis(rng.gen_range(100..=100));
-
-    (len, dur)
 }

@@ -121,9 +121,9 @@ impl Options {
             });
         }
 
-        if let Some(config) = shared.config.fragment.as_ref() {
-            let proxy = fragment::Proxy { size: config.size.clone(), shared: shared.clone() };
-            let listener = TcpListener::bind(config.bind).await?;
+        if let Some(config) = shared.config.fragment.clone() {
+            let listener = TcpListener::bind(&config.bind).await?;
+            let proxy = fragment::Proxy { config, shared: shared.clone() };
 
             joinset.spawn(async move {
                 loop {

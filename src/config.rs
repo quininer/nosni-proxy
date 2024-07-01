@@ -12,10 +12,11 @@ pub struct Config {
     pub mapping: HashMap<String, Rule>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Fragment {
     pub bind: SocketAddr,
     pub size: (u16, u16),
+    pub delay: Option<(u64, u64)>,
 }
 
 #[derive(Deserialize)]

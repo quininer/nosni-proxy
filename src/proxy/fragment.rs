@@ -14,14 +14,13 @@ use tower_layer::Layer;
 use tower_util::{ service_fn, ServiceExt };
 use tower_happy_eyeballs::HappyEyeballsLayer;
 
-use crate::config::StrOrList;
+use crate::config::{ StrOrList, Fragment };
 use crate::proxy::{ socks5, Shared };
-use crate::util::fragment;
 
 
 #[derive(Clone)]
 pub struct Proxy {
-    pub size: (u16, u16),
+    pub config: Fragment,
     pub shared: Arc<Shared>
 }
 
@@ -84,7 +83,7 @@ impl Proxy {
             while hello.len() > pos {
                 let len = hello.len() - pos;
                 let len = len.try_into().context("bad length")?;
-                let (len, dur) = fragment(len, self.size);
+                let (len, dur) = fragment(len, &self.config);
 
                 let mut header = header;
                 header[3..].copy_from_slice(&len.to_be_bytes());
@@ -94,7 +93,9 @@ impl Proxy {
                 pos += usize::from(len);
                 remote.flush().await?;
 
-                sleep(dur).await;
+                if let Some(dur) = dur {
+                    sleep(dur).await;
+                }
             }
         } else {
             remote.write_all(&header).await?;
@@ -124,4 +125,23 @@ where
         .oneshot(stream::iter(ips).fuse()).await?;
 
     Ok(remote)
+}
+
+fn fragment(len: u16, config: &Fragment) -> (u16, Option<Duration>) {
+    use rand::Rng;
+
+    let mut rng = rand::thread_rng();
+
+    let len = {
+        let start = std::cmp::min(len, config.size.0);
+        let end = std::cmp::min(len, config.size.1);
+        rng.gen_range(start..=end)
+    };
+    let dur = config.delay.map(|delay| {
+        let start = std::cmp::min(delay.0, delay.1);
+        let end = std::cmp::max(delay.0, delay.1);
+        Duration::from_millis(rng.gen_range(start..=end))
+    });
+
+    (len, dur)
 }
