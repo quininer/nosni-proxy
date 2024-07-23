@@ -1,5 +1,6 @@
+use std::io;
 use std::sync::Arc;
-use std::net::IpAddr;
+use std::net::{ SocketAddr, IpAddr, Ipv4Addr };
 use std::time::Duration;
 use anyhow::Context;
 
@@ -33,14 +34,12 @@ impl Proxy {
             .await
             .context("socks5 handshake")?;
 
-        let mut remote = match addr {
-            socks5::Address::Addr(addr) => {
-                // socks5 response
-                socks5::response(&mut stream, 0, addr).await.context("socks5 response")?;
-                TcpStream::connect(addr).await?
-            },
+        println!("[{:x}] start connect: {:?}", req_id, addr);
+
+        let maybe_remote = match &addr {
+            socks5::Address::Addr(addr) => TcpStream::connect(addr).await.context("remote connect with address"),
             socks5::Address::Domain(hostname, port) => {
-                let lookup = match self.shared.config.mapping.get(&hostname)
+                let lookup = match self.shared.config.mapping.get(hostname)
                     .and_then(|rule| rule.addr.as_ref())
                 {
                     Some(StrOrList::Str(name)) => self.shared.resolver.lookup_ip(name)
@@ -57,15 +56,33 @@ impl Proxy {
                     .and_then(|ret| ret.map_err(anyhow::Error::from))
                     .with_context(|| format!("dns lookup failure: {}", hostname))?;
 
-                remote_connect(ips, port)
-                    .await
-                    .context("remote connect")?
+                remote_connect(ips, *port).await.context("remote connect")
             }
         };
 
-        let addr = remote.local_addr().context("get remote local addr failed")?;
-        socks5::response(&mut stream, 0, addr).await.context("socks5 response")?;
-        println!("[{:x}] start connect: {:?}", req_id, addr);
+        let mut remote = match maybe_remote {
+            Ok(remote) => {
+                let addr = remote.local_addr().context("get remote local addr failed")?;
+                socks5::response(&mut stream, 0, addr).await.context("socks5 response")?;
+                remote
+            },
+            Err(err) => {
+                let reply = err.chain()
+                    .find(|err| {
+                        let kind = err.downcast_ref::<io::Error>().map(|err| err.kind());
+                        kind == Some(io::ErrorKind::ConnectionRefused)
+                    })
+                    .map(|_| 5)
+                    .unwrap_or(1);
+
+                let maybe_addr = match addr {
+                    socks5::Address::Addr(addr) => addr,
+                    socks5::Address::Domain(_, port) => SocketAddr::from((Ipv4Addr::LOCALHOST, port))
+                };
+                socks5::response(&mut stream, reply, maybe_addr).await.context("socks5 response")?;
+                return Err(err);
+            }
+        };
 
         let mut header = [0; 5];
         stream.read_exact(&mut header).await?;
@@ -100,6 +117,8 @@ impl Proxy {
         } else {
             remote.write_all(&header).await?;
         }
+
+        println!("[{:x}] connected: {:?}", req_id, remote.peer_addr());
 
         copy_bidirectional(&mut stream, &mut remote)
                 .await
