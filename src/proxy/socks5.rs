@@ -62,7 +62,7 @@ where
     {
         let version = stream.read_u8().await?;
         if version != v5::VERSION {
-            anyhow::bail!("didn't confirm with v5 version");
+            anyhow::bail!("didn't confirm with v5 version: {}", version);
         }
     }
 
@@ -70,7 +70,7 @@ where
     {
         let cmd = stream.read_u8().await?;
         if cmd != v5::CMD_CONNECT {
-            anyhow::bail!("unsupported command");
+            anyhow::bail!("unsupported command: {}", cmd);
         }
     }
 

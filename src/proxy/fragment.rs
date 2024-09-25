@@ -121,9 +121,9 @@ impl Proxy {
         println!("[{:x}] connected: {:?}", req_id, remote.peer_addr());
 
         copy_bidirectional(&mut stream, &mut remote)
-                .await
-                .map(drop)
-                .context("bidirectional copy stream error")?;
+            .await
+            .map(drop)
+            .context("bidirectional copy stream error")?;
 
         Ok(())
     }
