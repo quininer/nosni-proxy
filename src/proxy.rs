@@ -1,6 +1,7 @@
 mod socks5;
 mod mitm;
 mod fragment;
+mod localdoh;
 
 use std::fs;
 use std::time::Duration;
@@ -89,6 +90,7 @@ impl Options {
             Arc::new(Shared { config, resolver })
         };
 
+        let mut maybe_ca = None;
         let mut joinset: JoinSet<anyhow::Result<()>> = JoinSet::new();
 
         if let Some(config) = shared.config.mitm.as_ref() {
@@ -102,10 +104,13 @@ impl Options {
                     .unwrap_or(&config_path)
                     .join(&config.key);
                 let ca = Arc::new(Mutex::new(read_root_cert(&cert_path, &key_path)?));
+                maybe_ca = Some(ca.clone());
 
                 mitm::Proxy { ca, shared: shared.clone() }
             };
             let listener = TcpListener::bind(config.bind).await?;
+
+            println!("mitm listen: {:?}", listener.local_addr());
 
             joinset.spawn(async move {
                 loop {
@@ -124,6 +129,31 @@ impl Options {
         if let Some(config) = shared.config.fragment.clone() {
             let listener = TcpListener::bind(&config.bind).await?;
             let proxy = fragment::Proxy { config, shared: shared.clone() };
+
+            println!("fragment listen: {:?}", listener.local_addr());
+
+            joinset.spawn(async move {
+                loop {
+                    let (stream, _) = listener.accept().await?;
+                    let req_id: u64 = rand::random();
+                    let proxy = proxy.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = proxy.call(req_id, stream).await {
+                            eprintln!("[{:x}] proxy connect error: {:?}", req_id, err)
+                        }
+                    });
+                }
+            });
+        }
+
+        if let Some((config, ca)) = shared.config.localdoh.as_ref()
+            .filter(|_| shared.config.doh.is_some())
+            .zip(maybe_ca)
+        {
+            let listener = TcpListener::bind(&config.bind).await?;
+            let proxy = localdoh::Proxy { ca, shared: shared.clone() };
+
+            println!("localdoh listen: {:?}", listener.local_addr());
 
             joinset.spawn(async move {
                 loop {

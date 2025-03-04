@@ -114,7 +114,11 @@ impl Options {
             let resolver = resolver_fut.await?;
             let host = self.target.host().context("not found host")?;
             let ips = resolver.lookup_ip(host).await?;
-            let ip = ips.iter().next().context("not found addr")?;
+            let ips = ips.iter().collect::<Vec<_>>();
+
+            println!("ips: {:?}", ips);
+            
+            let ip = ips.first().cloned().context("not found addr")?;
             (ip, self.target.port_u16().unwrap_or(443)).into()
         };
         let sni = self.sni

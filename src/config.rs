@@ -9,6 +9,7 @@ pub struct Config {
     pub mitm: Option<Mitm>,
     pub fragment: Option<Fragment>,
     pub doh: Option<Doh>,
+    pub localdoh: Option<LocalDoh>,
     pub mapping: HashMap<String, Rule>,
 }
 
@@ -17,6 +18,12 @@ pub struct Fragment {
     pub bind: SocketAddr,
     pub size: (u16, u16),
     pub delay: Option<(u64, u64)>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct LocalDoh {
+    pub name: String,
+    pub bind: SocketAddr
 }
 
 #[derive(Deserialize)]

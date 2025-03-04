@@ -1,6 +1,14 @@
+use std::sync::Arc;
+use once_cell::sync::Lazy;
+use tokio_rustls::rustls;
 use tokio_rustls::rustls::compress::{ CertDecompressor, DecompressionFailed };
 use tokio_rustls::rustls::CertificateCompressionAlgorithm;
 
+
+pub static LOCAL_SESSION_CACHE: Lazy<Arc<rustls::server::ServerSessionMemoryCache>> =
+    Lazy::new(|| rustls::server::ServerSessionMemoryCache::new(64));
+pub static REMOTE_SESSION_CACHE: Lazy<rustls::client::Resumption> =
+    Lazy::new(|| rustls::client::Resumption::in_memory_sessions(64));
 
 #[derive(Debug)]
 pub struct ZlibDecompressor;

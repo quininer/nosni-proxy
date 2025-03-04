@@ -22,13 +22,9 @@ use tower_happy_eyeballs::HappyEyeballsLayer;
 use mitmca::CertStore;
 use crate::proxy::{ socks5, Shared };
 use crate::config::{ StrOrList, Rule };
-use crate::util::{ ZlibDecompressor, ZstdDecompressor };
+use crate::util::{ ZlibDecompressor, ZstdDecompressor, LOCAL_SESSION_CACHE, REMOTE_SESSION_CACHE };
 
 
-static LOCAL_SESSION_CACHE: Lazy<Arc<rustls::server::ServerSessionMemoryCache>> =
-    Lazy::new(|| rustls::server::ServerSessionMemoryCache::new(64));
-static REMOTE_SESSION_CACHE: Lazy<rustls::client::Resumption> =
-    Lazy::new(|| rustls::client::Resumption::in_memory_sessions(64));
 static LOCAL_ALPN_CACHE: Lazy<RwLock<HashMap<String, Vec<Vec<u8>>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
