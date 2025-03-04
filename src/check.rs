@@ -122,8 +122,7 @@ impl Options {
             (ip, self.target.port_u16().unwrap_or(443)).into()
         };
         let sni = self.sni
-            .as_ref()
-            .map(String::as_str)
+            .as_deref()
             .or_else(|| self.target.host())
             .and_then(|host| rustls::pki_types::ServerName::try_from(host).ok())
             .map(|host| host.to_owned())

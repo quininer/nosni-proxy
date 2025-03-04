@@ -149,17 +149,17 @@ where
 fn fragment(len: u16, config: &Fragment) -> (u16, Option<Duration>) {
     use rand::Rng;
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let len = {
         let start = std::cmp::min(len, config.size.0);
         let end = std::cmp::min(len, config.size.1);
-        rng.gen_range(start..=end)
+        rng.random_range(start..=end)
     };
     let dur = config.delay.map(|delay| {
         let start = std::cmp::min(delay.0, delay.1);
         let end = std::cmp::max(delay.0, delay.1);
-        Duration::from_millis(rng.gen_range(start..=end))
+        Duration::from_millis(rng.random_range(start..=end))
     });
 
     (len, dur)

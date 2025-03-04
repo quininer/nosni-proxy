@@ -12,6 +12,7 @@ members = [ "mitmca", "hook" ]
 [workspace.dependencies]
 rcgen = { git = "https://github.com/quininer/rcgen", branch = "signbyparams" }
 rustls = { version = "0.23", default-features = false, features = [ "std" ] }
+rand = "0.9"
 
 [dependencies]
 once_cell = "1"
@@ -26,7 +27,7 @@ hyper-util = { version = "0.1", features = [ "tokio", "server", "http1", "http2"
 http-body-util = "0.1"
 percent-encoding = "2"
 fdeflate = "0.3"
-ruzstd = "0.7"
+ruzstd = "0.8"
 hickory-resolver = { version = "0.24", features = [ "dns-over-https-rustls" ] }
 mitmca = { path = "mitmca" }
 
@@ -34,13 +35,13 @@ tower-layer = "0.3"
 tower-util = "0.3"
 tower-happy-eyeballs = { git = "https://github.com/quininer/tower-happy-eyeballs" }
 
-rand = "0.8"
+rand = { workspace = true }
 rcgen = { workspace = true }
 
 argh = "0.1"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
-directories = "5"
+directories = "6"
 
 [features]
 default = [ "dnssec" ]

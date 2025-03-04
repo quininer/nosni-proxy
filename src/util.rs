@@ -42,7 +42,7 @@ impl CertDecompressor for ZstdDecompressor {
     ) -> Result<(), DecompressionFailed> {
         use std::io::Read;
 
-        let mut decoder = ruzstd::streaming_decoder::StreamingDecoder::new(input)
+        let mut decoder = ruzstd::decoding::StreamingDecoder::new(input)
             .map_err(|_| DecompressionFailed)?;
         decoder.read_exact(output).map_err(|_| DecompressionFailed)
     }
