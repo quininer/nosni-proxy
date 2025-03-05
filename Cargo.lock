@@ -939,6 +939,7 @@ dependencies = [
  "fdeflate",
  "futures",
  "hickory-resolver",
+ "http 1.2.0",
  "http-body-util",
  "hyper",
  "hyper-util",

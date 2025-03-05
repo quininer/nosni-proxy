@@ -19,14 +19,13 @@ use crate::config::{ StrOrList, Fragment };
 use crate::proxy::{ socks5, Shared };
 
 
-#[derive(Clone)]
 pub struct Proxy {
     pub config: Fragment,
     pub shared: Arc<Shared>
 }
 
 impl Proxy {
-    pub async fn call(self, req_id: u64, mut stream: TcpStream) -> anyhow::Result<()> {
+    pub async fn call(self: Arc<Self>, req_id: u64, mut stream: TcpStream) -> anyhow::Result<()> {
         // local handshake
         //
         // Get target addr

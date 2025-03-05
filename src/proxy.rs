@@ -128,7 +128,7 @@ impl Options {
 
         if let Some(config) = shared.config.fragment.clone() {
             let listener = TcpListener::bind(&config.bind).await?;
-            let proxy = fragment::Proxy { config, shared: shared.clone() };
+            let proxy = Arc::new(fragment::Proxy { config, shared: shared.clone() });
 
             println!("fragment listen: {:?}", listener.local_addr());
 
@@ -139,19 +139,20 @@ impl Options {
                     let proxy = proxy.clone();
                     tokio::spawn(async move {
                         if let Err(err) = proxy.call(req_id, stream).await {
-                            eprintln!("[{:x}] proxy connect error: {:?}", req_id, err)
+                            eprintln!("[{:x}] fragment connect error: {:?}", req_id, err)
                         }
                     });
                 }
             });
         }
 
-        if let Some((config, ca)) = shared.config.localdoh.as_ref()
-            .filter(|_| shared.config.doh.is_some())
+        if let Some(((localdoh_config, doh_config), ca)) = shared.config.localdoh.as_ref()
+            .zip(shared.config.doh.as_ref())
             .zip(maybe_ca)
         {
-            let listener = TcpListener::bind(&config.bind).await?;
-            let proxy = localdoh::Proxy { ca, shared: shared.clone() };
+            let listener = TcpListener::bind(&localdoh_config.bind).await?;
+            let proxy = localdoh::Proxy::new(ca, localdoh_config, doh_config).await?;
+            let proxy = Arc::new(proxy);
 
             println!("localdoh listen: {:?}", listener.local_addr());
 
@@ -162,7 +163,7 @@ impl Options {
                     let proxy = proxy.clone();
                     tokio::spawn(async move {
                         if let Err(err) = proxy.call(req_id, stream).await {
-                            eprintln!("[{:x}] proxy connect error: {:?}", req_id, err)
+                            eprintln!("[{:x}] localdoh proxy error: {:?}", req_id, err)
                         }
                     });
                 }
