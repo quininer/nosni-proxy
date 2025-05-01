@@ -18,7 +18,6 @@ rand = "0.9"
 once_cell = "1"
 anyhow = "1"
 futures = "0.3"
-tokio-rustls24 = { package = "tokio-rustls", version = "0.24" }
 tokio-rustls = { version = "0.26", default-features = false, features = [ "tls12", "ring" ] }
 webpki-roots = "0.26"
 tokio = { version = "1", features = [ "full" ] }
@@ -29,7 +28,7 @@ http-body-util = "0.1"
 percent-encoding = "2"
 fdeflate = "0.3"
 ruzstd = "0.8"
-hickory-resolver = { version = "0.24", features = [ "dns-over-https-rustls" ] }
+hickory-resolver = { version = "0.25", features = [ "https-ring" ] }
 mitmca = { path = "mitmca" }
 
 tower-layer = "0.3"

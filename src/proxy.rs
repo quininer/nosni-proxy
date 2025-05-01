@@ -10,8 +10,7 @@ use std::path::{ PathBuf, Path };
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::sync::Mutex;
-use hickory_resolver::TokioAsyncResolver as AsyncResolver;
-use hickory_resolver::config::{ ResolverConfig, ResolverOpts, NameServerConfigGroup };
+use hickory_resolver::config::{ ResolverConfig, NameServerConfigGroup };
 use anyhow::format_err;
 use argh::FromArgs;
 use directories::ProjectDirs;
@@ -30,7 +29,7 @@ pub struct Options {
 
 struct Shared {
     config: Config,
-    resolver: AsyncResolver,
+    resolver: hickory_resolver::TokioResolver,
 }
 
 impl Options {
@@ -46,45 +45,38 @@ impl Options {
             let config: Config = toml::from_str(&fs::read_to_string(&config_path)?)?;
 
             let resolver = if let Some(ref doh) = config.doh {
-                use tokio_rustls24::rustls;
+                use tokio_rustls::rustls;
 
                 let mut root_cert_store = rustls::RootCertStore::empty();
-                root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(
-                    |ta| {
-                        rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                            ta.subject.as_ref(),
-                            ta.subject_public_key_info.as_ref(),
-                            ta.name_constraints.as_deref(),
-                        )
-                    },
-                ));
+                root_cert_store.roots = webpki_roots::TLS_SERVER_ROOTS.into();
                 let mut tls_config = rustls::ClientConfig::builder()
-                    .with_safe_defaults()
                     .with_root_certificates(root_cert_store)
-                    .with_no_client_auth();
+                    .with_no_client_auth();                
                 tls_config.alpn_protocols = vec![b"h2".to_vec()];
                 tls_config.enable_sni = doh.sni;
                 tls_config.enable_early_data = true;
-                let tls_config = Arc::new(tls_config);
 
                 let server = NameServerConfigGroup::from_ips_https(
                     &[doh.addr.ip()], doh.addr.port(),
                     doh.name.clone(), false
                 );
-                let mut dns_config = ResolverConfig::from_parts(None, Vec::new(), server);
-                dns_config.set_tls_client_config(tls_config);
+                let dns_config = ResolverConfig::from_parts(None, Vec::new(), server);
 
-                let mut opts = ResolverOpts::default();
-                opts.timeout = Duration::from_secs(2);
-                opts.attempts = 1;
+                let mut builder = hickory_resolver::Resolver::builder_with_config(
+                    dns_config,
+                    hickory_resolver::name_server::TokioConnectionProvider::default()
+                );
+                builder.options_mut().tls_config = tls_config;
+                builder.options_mut().timeout = Duration::from_secs(2);
+                builder.options_mut().attempts = 1;
 
                 #[cfg(feature = "dnssec")] {
-                    opts.validate = doh.dnssec;
+                    builder.options_mut().validate = doh.dnssec;
                 }
 
-                AsyncResolver::tokio(dns_config, opts)
+                builder.build()
             } else {
-                AsyncResolver::tokio_from_system_conf()?
+                hickory_resolver::TokioResolver::builder_tokio()?.build()
             };
 
             Arc::new(Shared { config, resolver })
