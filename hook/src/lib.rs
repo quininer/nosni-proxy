@@ -16,7 +16,7 @@ static SSL_CTRL_SYMBOLS: Lazy<SslCtrlSymbol<'static>> = Lazy::new(|| unsafe {
 });
 
 #[no_mangle]
-pub extern fn SSL_ctrl(ssl: *mut c_void, cmd: c_int, larg: c_long, parg: *mut c_void) -> c_long {
+pub extern "C" fn SSL_ctrl(ssl: *mut c_void, cmd: c_int, larg: c_long, parg: *mut c_void) -> c_long {
     const SSL_CTRL_SET_TLSEXT_HOSTNAME: usize = 55;
 
     if cmd == SSL_CTRL_SET_TLSEXT_HOSTNAME as _ {

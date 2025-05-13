@@ -1,3 +1,4 @@
+use std::io;
 use std::sync::Arc;
 use std::net::SocketAddr;
 
@@ -95,7 +96,14 @@ impl Proxy {
                 println!("[{}] new remote doh connect: {:?}", req_id, remote.get_ref().0.peer_addr());
 
                 let (send_req2, conn) = proxy.client.handshake::<_, Incoming>(TokioIo::new(remote)).await?;
-                tokio::spawn(conn.map_err(move |err| eprintln!("[{}] remote http2 error: {:?}", req_id, err)));
+                tokio::spawn(conn.map_err(move |err| {
+                    if (&err as &dyn std::error::Error).downcast_ref::<io::Error>()
+                        .filter(|err| err.kind() == io::ErrorKind::UnexpectedEof)
+                        .is_none()
+                    {
+                        eprintln!("[{}] remote http2 error: {:?}", req_id, err);
+                    }
+                }));
                 
                 *send_req = Some(send_req2);
             }

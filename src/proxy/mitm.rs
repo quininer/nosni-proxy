@@ -165,6 +165,13 @@ impl Proxy {
 
         copy_bidirectional(&mut local, &mut remote)
             .await
+            .map(drop)
+            // ignore `peer closed connection without sending TLS close_notify`
+            .or_else(|err| if err.kind() == io::ErrorKind::UnexpectedEof {
+                Ok(())
+            } else {
+                Err(err)
+            })
             .context("bidirectional copy stream error")?;
 
         Ok(())
