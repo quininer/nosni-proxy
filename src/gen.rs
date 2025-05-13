@@ -1,7 +1,6 @@
 use std::fs;
 use std::io::{ self, BufRead, Write };
 use argh::FromArgs;
-use rand::{ TryRngCore, rngs::OsRng };
 
 
 /// local CA certs generator
@@ -15,7 +14,6 @@ pub struct Options {
 
 impl Options {
     pub fn exec(self) -> anyhow::Result<()> {
-        let mut rng = OsRng;
         let name = self.name.as_str();
 
         let stdin = io::stdin();
@@ -44,7 +42,7 @@ impl Options {
         let cn = readline!("common name> ").to_owned();
 
         let mut params = rcgen::CertificateParams::default();
-        params.serial_number = Some(rng.try_next_u64().unwrap().into());
+        params.serial_number = Some(rand::random::<u64>().into());
         params.subject_alt_names = list;
         params.distinguished_name.push(rcgen::DnType::OrganizationName, on);
         params.distinguished_name.push(rcgen::DnType::CommonName, cn);

@@ -10,7 +10,7 @@ psl = "2"
 cache_2q = "0.10"
 rand = { workspace = true }
 rustls = { workspace = true }
-pem = "3"
+pem = "4"
 rcgen = { workspace = true, features = [ "x509-parser" ] }
 time = "0.3"
 

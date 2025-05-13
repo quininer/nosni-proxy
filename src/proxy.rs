@@ -10,7 +10,8 @@ use std::path::{ PathBuf, Path };
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::sync::Mutex;
-use hickory_resolver::config::{ ResolverConfig, NameServerConfigGroup };
+use hickory_net::runtime::TokioRuntimeProvider;
+use hickory_resolver::config::{ ResolverConfig, NameServerConfig };
 use anyhow::format_err;
 use argh::FromArgs;
 use directories::ProjectDirs;
@@ -56,17 +57,15 @@ impl Options {
                 tls_config.enable_sni = doh.sni;
                 tls_config.enable_early_data = true;
 
-                let server = NameServerConfigGroup::from_ips_https(
-                    &[doh.addr.ip()], doh.addr.port(),
-                    doh.name.clone(), false
-                );
-                let dns_config = ResolverConfig::from_parts(None, Vec::new(), server);
+                let mut server = NameServerConfig::https(doh.addr.ip(), Arc::from(doh.name.as_str()), None);
+                server.connections[0].port = doh.addr.port();
+                let dns_config = ResolverConfig::from_name_servers(vec![server]);
 
                 let mut builder = hickory_resolver::Resolver::builder_with_config(
                     dns_config,
-                    hickory_resolver::name_server::TokioConnectionProvider::default()
-                );
-                builder.options_mut().tls_config = tls_config;
+                    TokioRuntimeProvider::new()
+                )
+                    .with_tls_config(tls_config);
                 builder.options_mut().timeout = Duration::from_secs(2);
                 builder.options_mut().attempts = 1;
 
@@ -74,9 +73,9 @@ impl Options {
                     builder.options_mut().validate = doh.dnssec;
                 }
 
-                builder.build()
+                builder.build()?
             } else {
-                hickory_resolver::TokioResolver::builder_tokio()?.build()
+                hickory_resolver::TokioResolver::builder_tokio()?.build()?
             };
 
             Arc::new(Shared { config, resolver })
